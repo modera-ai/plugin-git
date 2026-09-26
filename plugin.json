@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "extensions": ["panel"],
+  "extensions": ["panel", "tool.approval"],
   "id": "modera.git",
   "name": "Git",
   "version": "0.1.0",

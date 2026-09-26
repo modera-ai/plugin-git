@@ -8,8 +8,9 @@ import {
 } from "@modera/plugin-sdk";
 import manifest from "../plugin.json";
 import { gitUi } from "./ui";
+import { GitChanges } from "./changes";
 
-type Input = {
+export type Input = {
   action: string;
   paths?: string[];
   staged?: boolean;
@@ -48,7 +49,7 @@ export function git(
   });
 }
 
-async function repository(context: ToolContext): Promise<string> {
+export async function repository(context: ToolContext): Promise<string> {
   if (!context.workspacePath)
     throw new Error("A project workspace is required");
   const workspace = await realpath(context.workspacePath);
@@ -62,7 +63,7 @@ async function repository(context: ToolContext): Promise<string> {
   return root;
 }
 
-function selectedPaths(paths: unknown, required = false): string[] {
+export function selectedPaths(paths: unknown, required = false): string[] {
   if (paths === undefined && !required) return [];
   if (!Array.isArray(paths) || !paths.length || paths.length > 100)
     throw new Error("Select 1–100 explicit paths");
@@ -183,7 +184,18 @@ export async function change(input: Input, context: ToolContext) {
       args = ["add", "--", ...selectedPaths(input.paths, true)];
       break;
     case "unstage":
-      args = ["restore", "--staged", "--", ...selectedPaths(input.paths, true)];
+      const paths = selectedPaths(input.paths, true);
+      const hasHead = await git(
+        root,
+        ["rev-parse", "--verify", "HEAD"],
+        context.signal,
+      ).then(
+        () => true,
+        () => false,
+      );
+      args = hasHead
+        ? ["restore", "--staged", "--", ...paths]
+        : ["rm", "--cached", "-r", "--", ...paths];
       break;
     case "commit":
       if (!input.message?.trim() || input.message.length > 10000)
@@ -214,14 +226,24 @@ export async function change(input: Input, context: ToolContext) {
   };
 }
 
-export const activate: PluginModule["activate"] = async () => ({
-  ui: gitUi(),
-  tools: declaredTools(manifest).map((definition) => ({
-    definition,
-    isAvailable: (context) => !!context.workspacePath,
-    execute: (input, context) =>
-      definition.id === "git_inspect"
-        ? inspect(input as Input, context)
-        : change(input as Input, context),
-  })),
-});
+export const activate: PluginModule["activate"] = async (host) => {
+  const changes = new GitChanges();
+  host.signal.addEventListener("abort", () => changes.clear(), { once: true });
+  return {
+    ui: gitUi(),
+    tools: declaredTools(manifest).map((definition) => ({
+      definition,
+      isAvailable: (context) => !!context.workspacePath,
+      ...(definition.id === "git_change"
+        ? {
+            prepare: (input: unknown, context: ToolContext) =>
+              changes.prepare(input as Input, context),
+          }
+        : {}),
+      execute: (input, context) =>
+        definition.id === "git_inspect"
+          ? inspect(input as Input, context)
+          : changes.execute(input, context),
+    })),
+  };
+};
