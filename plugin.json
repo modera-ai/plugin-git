@@ -1,5 +1,6 @@
 {
   "apiVersion": 1,
+  "extensions": ["panel"],
   "id": "modera.git",
   "name": "Git",
   "version": "0.1.0",
@@ -8,11 +9,7 @@
   "category": "development",
   "icon": "git-branch",
   "main": "dist/index.cjs",
-  "permissions": [
-    "workspace.read",
-    "workspace.write",
-    "process.spawn"
-  ],
+  "permissions": ["workspace.read", "workspace.write", "process.spawn"],
   "tools": [
     {
       "id": "git_inspect",
@@ -23,12 +20,7 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "enum": [
-              "status",
-              "diff",
-              "log",
-              "branches"
-            ]
+            "enum": ["status", "diff", "log", "branches"]
           },
           "paths": {
             "type": "array",
@@ -49,21 +41,14 @@
             "maximum": 100
           }
         },
-        "required": [
-          "action"
-        ]
+        "required": ["action"]
       },
-      "requiredPermissions": [
-        "workspace.read",
-        "process.spawn"
-      ],
+      "requiredPermissions": ["workspace.read", "process.spawn"],
       "presentation": {
         "icon": "code",
         "tone": "blue",
         "kind": "search",
-        "targets": [
-          "action"
-        ]
+        "targets": ["action"]
       }
     },
     {
@@ -75,12 +60,7 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "enum": [
-              "stage",
-              "unstage",
-              "commit",
-              "create_branch"
-            ]
+            "enum": ["stage", "unstage", "commit", "create_branch"]
           },
           "paths": {
             "type": "array",
@@ -103,9 +83,7 @@
             "maxLength": 200
           }
         },
-        "required": [
-          "action"
-        ]
+        "required": ["action"]
       },
       "requiredPermissions": [
         "workspace.read",
@@ -116,9 +94,7 @@
         "icon": "code",
         "tone": "amber",
         "kind": "edit",
-        "targets": [
-          "action"
-        ]
+        "targets": ["action"]
       }
     }
   ],
