@@ -1,0 +1,19 @@
+{
+  "name": "@modera-plugin/git",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Inspect repositories, review diffs and explicitly stage or commit selected files.",
+  "files": [
+    "plugin.json",
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "modera-plugin-build ."
+  },
+  "devDependencies": {
+    "@modera/plugin-build": "0.1.0",
+    "@modera/plugin-sdk": "0.1.0"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,131 @@
+{
+  "apiVersion": 1,
+  "id": "modera.git",
+  "name": "Git",
+  "version": "0.1.0",
+  "description": "Inspect repositories, review diffs and explicitly stage or commit selected files.",
+  "author": "Modera",
+  "category": "development",
+  "icon": "git-branch",
+  "main": "dist/index.cjs",
+  "permissions": [
+    "workspace.read",
+    "workspace.write",
+    "process.spawn"
+  ],
+  "tools": [
+    {
+      "id": "git_inspect",
+      "title": "Inspect Git repository",
+      "description": "Read repository status, diff, history or local branches. Paths are literal repository-relative paths. No remote access.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "status",
+              "diff",
+              "log",
+              "branches"
+            ]
+          },
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "staged": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "requiredPermissions": [
+        "workspace.read",
+        "process.spawn"
+      ],
+      "presentation": {
+        "icon": "code",
+        "tone": "blue",
+        "kind": "search",
+        "targets": [
+          "action"
+        ]
+      }
+    },
+    {
+      "id": "git_change",
+      "title": "Change Git repository",
+      "description": "Stage or unstage explicit files, commit the current index, or create a new branch. Review status and diff first. No reset, clean, force push or checkout of existing branches.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "stage",
+              "unstage",
+              "commit",
+              "create_branch"
+            ]
+          },
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "branch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "requiredPermissions": [
+        "workspace.read",
+        "workspace.write",
+        "process.spawn"
+      ],
+      "presentation": {
+        "icon": "code",
+        "tone": "amber",
+        "kind": "edit",
+        "targets": [
+          "action"
+        ]
+      }
+    }
+  ],
+  "locales": {
+    "zh-CN": {
+      "name": "Git 版本管理",
+      "description": "查看变更、历史和分支，暂存指定文件并提交。"
+    }
+  }
+}
