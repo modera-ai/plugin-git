@@ -186,6 +186,15 @@ button svg {
   width: 16px;
   height: 16px;
 }
+.review-path-directory {
+  color: var(--review-muted);
+}
+.review-menu-panel .review-group-start {
+  border-top: 1px solid var(--review-line);
+  border-radius: 0;
+  margin-top: 5px;
+  padding-top: 11px;
+}
 .review-menu-panel .review-submenu {
   position: relative;
 }

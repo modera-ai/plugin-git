@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes } from "react";
+import { Tooltip } from "@modera/ui/tooltip";
 import { createRoot } from "react-dom/client";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, lineNumbers, Decoration } from "@codemirror/view";
@@ -41,6 +42,15 @@ import type { RunChangedFile } from "@modera/plugin-sdk";
 import { RenderedPreview, supportsPreview } from "./RenderedPreview";
 
 type FileChange = RunChangedFile & { before?: string; after?: string };
+function ReviewButton({
+  title,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement>) {
+  const button = (
+    <button {...props} aria-label={props["aria-label"] ?? title} />
+  );
+  return title ? <Tooltip content={title}>{button}</Tooltip> : button;
+}
 type Data = {
   scope?: { kind: string; ref?: string };
   git?: {
@@ -233,6 +243,28 @@ function App() {
     setLocal(undefined);
   }, [snapshot?.view]);
   useEffect(() => {
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Node;
+      root.current
+        ?.querySelectorAll<HTMLDetailsElement>(".review-menu[open]")
+        .forEach((details) => {
+          if (!details.contains(target)) details.removeAttribute("open");
+        });
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape")
+        root.current
+          ?.querySelectorAll("details[open]")
+          .forEach((details) => details.removeAttribute("open"));
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", escape);
+    };
+  }, []);
+  useEffect(() => {
     void frontend().ready();
     if (!root.current) return;
     const observer = new ResizeObserver(([entry]) =>
@@ -313,6 +345,9 @@ function App() {
                 {["turn", "uncommitted", "unstaged", "staged"].map((kind) => (
                   <button
                     key={kind}
+                    className={
+                      kind === "uncommitted" ? "review-group-start" : undefined
+                    }
                     onClick={(event) => {
                       event.currentTarget
                         .closest("details")
@@ -397,9 +432,11 @@ function App() {
         </div>
         <div className="review-tools">
           <details ref={menu} className="review-menu">
-            <summary title={t("查看选项", "View options")}>
-              <MoreHorizontal />
-            </summary>
+            <Tooltip content={t("查看选项", "View options")}>
+              <summary aria-label={t("查看选项", "View options")}>
+                <MoreHorizontal />
+              </summary>
+            </Tooltip>
             <div className="review-menu-panel">
               <button onClick={() => setFull(!full)}>
                 <FileText />
@@ -463,7 +500,7 @@ function App() {
               )}
             </div>
           </details>
-          <button
+          <ReviewButton
             title={
               split
                 ? t("切换为单列差异", "Switch to unified diff")
@@ -473,9 +510,9 @@ function App() {
             onClick={() => setMode(split ? "unified" : "split")}
           >
             {split ? <Columns2 /> : <List />}
-          </button>
+          </ReviewButton>
           {data?.overview && (
-            <button
+            <ReviewButton
               title={
                 displayed.every((item) => closed[item.path])
                   ? t("展开全部差异", "Expand all diffs")
@@ -491,23 +528,23 @@ function App() {
               }}
             >
               <ListCollapse />
-            </button>
+            </ReviewButton>
           )}
-          <button
+          <ReviewButton
             title={t("文件导航", "File navigation")}
             aria-pressed={showTree}
             onClick={() => setTree(!showTree)}
           >
             <FolderTree />
-          </button>
+          </ReviewButton>
           {data?.mode === "workspace" && (
-            <button
+            <ReviewButton
               disabled={busy}
               title={t("刷新", "Refresh")}
               onClick={() => void act("refresh")}
             >
               <RefreshCw className={busy ? "spin" : ""} />
-            </button>
+            </ReviewButton>
           )}
         </div>
       </header>
@@ -596,7 +633,7 @@ function App() {
               >
                 <header className="review-file-heading">
                   {data?.overview && (
-                    <button
+                    <ReviewButton
                       title={t("展开 / 收起", "Expand / collapse")}
                       aria-expanded={!closed[file.path]}
                       onClick={() =>
@@ -613,10 +650,17 @@ function App() {
                             : undefined,
                         }}
                       />
-                    </button>
+                    </ReviewButton>
                   )}
                   <FileTypeIcon path={file.path} />
-                  <span title={file.path}>{file.path}</span>
+                  <span>
+                    <span className="review-path-directory">
+                      {file.path.includes("/")
+                        ? file.path.slice(0, file.path.lastIndexOf("/") + 1)
+                        : ""}
+                    </span>
+                    {file.path.split("/").at(-1)}
+                  </span>
                   <span className="review-status">
                     {file.status === "added"
                       ? t("新增", "Added")
@@ -629,7 +673,7 @@ function App() {
                     <span className="removed">−{file.removed}</span>
                   </span>
                   {file.status !== "deleted" && (
-                    <button
+                    <ReviewButton
                       title={t("在文件浏览器中打开", "Open in file browser")}
                       onClick={() => {
                         void frontend()
@@ -638,7 +682,7 @@ function App() {
                       }}
                     >
                       <SquareArrowOutUpRight />
-                    </button>
+                    </ReviewButton>
                   )}
                 </header>
                 {!closed[file.path] && (
