@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes } from "react";
 import { Tooltip } from "@modera/ui/tooltip";
+import "@modera/ui/tooltip.css";
 import { createRoot } from "react-dom/client";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, lineNumbers, Decoration } from "@codemirror/view";
