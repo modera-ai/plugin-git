@@ -292,6 +292,34 @@ button svg {
 .review-diff .cm-insertedText {
   background: rgb(37 156 92 / 19%);
 }
+.review-app .review-diff .cm-merge-a .cm-changedText,
+.review-app .review-diff .cm-deletedChunk .cm-deletedText {
+  background: rgb(201 65 73 / 23%) !important;
+  background-image: none !important;
+  text-decoration: none !important;
+}
+.review-app .review-diff .cm-merge-b .cm-changedText {
+  background: rgb(37 156 92 / 23%) !important;
+  background-image: none !important;
+  text-decoration: none !important;
+}
+.review-app[data-theme="dark"] .review-diff .cm-merge-a .cm-changedLine,
+.review-app[data-theme="dark"] .review-diff .cm-deletedChunk,
+.review-app[data-theme="dark"] .review-diff .cm-deletedLine {
+  background: rgb(153 49 39 / 28%);
+}
+.review-app[data-theme="dark"] .review-diff .cm-merge-b .cm-changedLine,
+.review-app[data-theme="dark"] .review-diff .cm-editor:not(.cm-merge-a):not(.cm-merge-b) .cm-changedLine,
+.review-app[data-theme="dark"] .review-diff .cm-insertedLine {
+  background: rgb(35 112 64 / 28%);
+}
+.review-app[data-theme="dark"] .review-diff .cm-merge-a .cm-changedText,
+.review-app[data-theme="dark"] .review-diff .cm-deletedChunk .cm-deletedText {
+  background: rgb(190 62 48 / 34%) !important;
+}
+.review-app[data-theme="dark"] .review-diff .cm-merge-b .cm-changedText {
+  background: rgb(54 145 81 / 34%) !important;
+}
 .review-diff .cm-collapsedLines {
   font: 11px/1.5 inherit;
   color: var(--review-muted);
