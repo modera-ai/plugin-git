@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { GitRunChanges } from "../src/run-changes";
+import { WorkspaceChangeReview } from "../src/run-changes";
 
 let root: string, workspace: string, storage: string;
 const signal = () => new AbortController().signal;
@@ -41,7 +41,7 @@ describe("per-turn Git changes", () => {
   it("excludes pre-existing edits and coalesces repeated edits from the actual baseline", async () => {
     await writeFile(join(workspace, "file.ts"), "const value = 7;\n");
     await writeFile(join(workspace, "existing.txt"), "user draft\n");
-    const changes = new GitRunChanges(storage),
+    const changes = new WorkspaceChangeReview(storage),
       capture = (await changes.begin(context()))!;
     await writeFile(join(workspace, "file.ts"), "const value = 8;\n");
     await writeFile(join(workspace, "file.ts"), "const value = 9;\n");
@@ -49,12 +49,15 @@ describe("per-turn Git changes", () => {
     expect(summary.files.map((file) => file.path)).toEqual(["file.ts"]);
     expect(summary.added).toBe(1);
     expect(summary.removed).toBe(1);
-    const review = await new GitRunChanges(storage).load(context(), "run");
+    const review = await new WorkspaceChangeReview(storage).load(
+      context(),
+      "run",
+    );
     expect(review.files[0]?.before).toBe("const value = 7;\n");
     expect(review.files[0]?.after).toBe("const value = 9;\n");
   });
   it("retains historical diff after committing and after later edits", async () => {
-    const changes = new GitRunChanges(storage),
+    const changes = new WorkspaceChangeReview(storage),
       capture = (await changes.begin(context()))!;
     await writeFile(join(workspace, "file.ts"), "const value = 2;\n");
     git("add", ".");
@@ -63,14 +66,17 @@ describe("per-turn Git changes", () => {
     expect(git("status", "--porcelain").trim()).toBe("");
     expect(summary.files).toHaveLength(1);
     await writeFile(join(workspace, "file.ts"), "const value = 3;\n");
-    const review = await new GitRunChanges(storage).load(context(), "run");
+    const review = await new WorkspaceChangeReview(storage).load(
+      context(),
+      "run",
+    );
     expect(review.files[0]?.after).toBe("const value = 2;\n");
     await expect(
       changes.load({ ...context(), projectId: "other" }, "run"),
     ).rejects.toThrow("scope mismatch");
   });
   it("records new untracked and deleted files without touching the Git index", async () => {
-    const changes = new GitRunChanges(storage),
+    const changes = new WorkspaceChangeReview(storage),
       capture = (await changes.begin(context()))!;
     const index = await readFile(join(workspace, ".git", "index"));
     await writeFile(join(workspace, "new.txt"), "new\n");
@@ -83,7 +89,7 @@ describe("per-turn Git changes", () => {
     expect(await readFile(join(workspace, ".git", "index"))).toEqual(index);
   });
   it("omits unchanged turns and safely describes binary changes", async () => {
-    const changes = new GitRunChanges(storage);
+    const changes = new WorkspaceChangeReview(storage);
     expect(
       await (await changes.begin(context()))!.finish(signal()),
     ).toBeUndefined();
@@ -99,20 +105,83 @@ describe("per-turn Git changes", () => {
       (await changes.load(context(), "run")).files[0]?.after,
     ).toBeUndefined();
   });
-  it("supports an unborn repository and ignores non-Git projects", async () => {
+  it("supports an unborn repository and an ordinary empty folder", async () => {
     const empty = join(root, "empty");
     await mkdir(empty);
-    expect(
-      await new GitRunChanges(storage).begin({
-        ...context(),
-        workspacePath: empty,
-      }),
-    ).toBeUndefined();
+    const ordinary = await new WorkspaceChangeReview(storage).begin({
+      ...context(),
+      workspacePath: empty,
+    });
+    expect(ordinary).toBeDefined();
+    expect(await ordinary!.finish(signal())).toBeUndefined();
     git("checkout", "--orphan", "fresh");
     git("rm", "-rf", ".");
-    const changes = new GitRunChanges(storage),
+    const changes = new WorkspaceChangeReview(storage),
       capture = (await changes.begin(context()))!;
     await writeFile(join(workspace, "first.txt"), "first\n");
     expect((await capture.finish(signal()))?.files[0]?.status).toBe("added");
+  });
+});
+
+describe("ordinary workspace review", () => {
+  beforeEach(async () => {
+    workspace = join(root, "ordinary");
+    await mkdir(workspace);
+  });
+  it("captures direct filesystem changes, creation and deletion without creating a repository", async () => {
+    await writeFile(join(workspace, "edit.txt"), "before\n");
+    await writeFile(join(workspace, "delete.txt"), "old\n");
+    await writeFile(
+      join(workspace, "untouched.txt"),
+      "user existing content\n",
+    );
+    const changes = new WorkspaceChangeReview(storage),
+      capture = (await changes.begin(context()))!;
+    await writeFile(join(workspace, "edit.txt"), "middle\n");
+    await writeFile(join(workspace, "edit.txt"), "after\n");
+    await writeFile(join(workspace, "new.txt"), "new\n");
+    await rm(join(workspace, "delete.txt"));
+    const result = (await capture.finish(signal()))!;
+    expect(result.files.map((file) => [file.path, file.status])).toEqual([
+      ["delete.txt", "deleted"],
+      ["edit.txt", "modified"],
+      ["new.txt", "added"],
+    ]);
+    await expect(readFile(join(workspace, ".git", "HEAD"))).rejects.toThrow();
+    await writeFile(join(workspace, "edit.txt"), "later\n");
+    const saved = await new WorkspaceChangeReview(storage).current(context());
+    expect(saved.files.find((file) => file.path === "edit.txt")).toMatchObject({
+      before: "before\n",
+      after: "after\n",
+    });
+    expect(
+      await changes.currentFile(context(), saved, "edit.txt"),
+    ).toMatchObject({ after: "after\n" });
+  });
+  it("excludes dependency folders and honors workspace ignore rules", async () => {
+    await mkdir(join(workspace, "node_modules"));
+    await mkdir(join(workspace, "generated"));
+    await writeFile(join(workspace, ".gitignore"), "generated/\n*.log\n");
+    const changes = new WorkspaceChangeReview(storage),
+      capture = (await changes.begin(context()))!;
+    await writeFile(
+      join(workspace, "node_modules", "package.js"),
+      "dependency\n",
+    );
+    await writeFile(join(workspace, "generated", "out.txt"), "generated\n");
+    await writeFile(join(workspace, "debug.log"), "ignored\n");
+    await writeFile(join(workspace, "file.txt"), "included\n");
+    expect(
+      (await capture.finish(signal()))!.files.map((file) => file.path),
+    ).toEqual(["file.txt"]);
+  });
+  it("coalesces reverted edits into no change", async () => {
+    await writeFile(join(workspace, "file.txt"), "original\n");
+    const capture = (await new WorkspaceChangeReview(storage).begin(
+      context(),
+    ))!;
+    await writeFile(join(workspace, "file.txt"), "temporary\n");
+    await writeFile(join(workspace, "file.txt"), "original\n");
+    expect(await capture.finish(signal())).toBeUndefined();
   });
 });

@@ -4,6 +4,7 @@ import {
   mkdir,
   readFile,
   readlink,
+  realpath,
   rename,
   writeFile,
 } from "node:fs/promises";
@@ -15,7 +16,8 @@ import type {
   RunChangesSummary,
   ToolContext,
 } from "@modera/plugin-sdk";
-import { git, repository, selectedPaths } from "./index";
+import { git, repository, selectedPaths } from "./git-backend";
+import { workspaceFiles } from "./workspace-snapshot";
 
 const FILE_LIMIT = 1024 * 1024;
 const TOTAL_LIMIT = 32 * 1024 * 1024;
@@ -134,9 +136,9 @@ function changed(
   };
 }
 
-/** HEAD plus pre-existing dirty contents is the baseline; commits during a turn
- * do not erase it. No stash, index update, commit or Git object is created. */
-export class GitRunChanges {
+/** Workspace snapshots are the baseline. Git optionally accelerates discovery
+ * and clean-file reads; it is never required or initialized by this plugin. */
+export class WorkspaceChangeReview {
   constructor(private readonly storage: string) {}
   private path(session: string, run: string) {
     return join(
@@ -148,13 +150,20 @@ export class GitRunChanges {
   }
   async begin(context: RunChangesContext) {
     if (!context.workspacePath) return undefined;
-    const root = await repository(context).catch(() => undefined);
-    if (!root) return undefined;
-    const head = await headOf(root, context.signal);
+    const gitRoot = await repository(context).catch(() => undefined);
+    const root = gitRoot ?? (await realpath(context.workspacePath));
+    const head = gitRoot ? await headOf(root, context.signal) : undefined;
     const baseline = new Map<string, Content | null>();
     let bytes = 0,
       incomplete = false;
-    const paths = await dirtyPaths(root, head, context.signal);
+    const discovered = gitRoot
+      ? {
+          paths: await dirtyPaths(root, head, context.signal),
+          incomplete: false,
+        }
+      : await workspaceFiles(root, context.signal);
+    const paths = discovered.paths;
+    incomplete = discovered.incomplete;
     for (const path of paths.slice(0, 2000)) {
       context.signal.throwIfAborted();
       const file = await workingFile(root, path);
@@ -168,16 +177,19 @@ export class GitRunChanges {
     if (baseline.size < paths.length) incomplete = true;
     return {
       finish: async (signal: AbortSignal) => {
-        const candidates = new Set([
-          ...baseline.keys(),
-          ...(await dirtyPaths(root, head, signal)),
-        ]);
+        const ended = gitRoot
+          ? { paths: await dirtyPaths(root, head, signal), incomplete: false }
+          : await workspaceFiles(root, signal);
+        const candidates = new Set([...baseline.keys(), ...ended.paths]);
+        incomplete ||= ended.incomplete;
         const files: ChangedFile[] = [];
         let storedBytes = 0;
         for (const path of [...candidates].sort().slice(0, 2000)) {
           signal.throwIfAborted();
           // A missing baseline entry from the budget must not be mistaken for a new file.
           if (paths.includes(path) && !baseline.has(path)) continue;
+          if (!gitRoot && discovered.incomplete && !baseline.has(path))
+            continue;
           const before = baseline.has(path)
             ? baseline.get(path)!
             : await headFile(root, head, path, signal);
@@ -210,6 +222,10 @@ export class GitRunChanges {
         const temporary = `${target}.${randomUUID()}.tmp`;
         await writeFile(temporary, JSON.stringify(review));
         await rename(temporary, target);
+        await writeFile(
+          join(dirname(target), "latest.json"),
+          JSON.stringify({ runId: context.runId }),
+        );
         return this.summary(review);
       },
       dispose: () => baseline.clear(),
@@ -243,8 +259,26 @@ export class GitRunChanges {
     return review;
   }
   async current(context: ToolContext): Promise<ChangeReview> {
-    const root = await repository(context),
-      head = await headOf(root, context.signal);
+    const root = await repository(context).catch(() => undefined);
+    if (!root) {
+      const latest = await readFile(
+        join(dirname(this.path(context.sessionId, "")), "latest.json"),
+        "utf8",
+      ).then(
+        (value) => JSON.parse(value) as { runId: string },
+        () => undefined,
+      );
+      if (latest) return this.load(context, latest.runId);
+      return {
+        projectId: context.projectId,
+        sessionId: context.sessionId,
+        runId: "",
+        files: [],
+        added: 0,
+        removed: 0,
+      };
+    }
+    const head = await headOf(root, context.signal);
     const paths = await dirtyPaths(root, head, context.signal),
       files: ChangedFile[] = [];
     const numbers = head
@@ -313,6 +347,7 @@ export class GitRunChanges {
   async currentFile(context: ToolContext, review: ChangeReview, path: string) {
     if (!review.files.some((file) => file.path === path))
       throw new Error("File is not in this review");
+    if (review.runId) return review.files.find((file) => file.path === path);
     const root = await repository(context);
     return changed(
       path,

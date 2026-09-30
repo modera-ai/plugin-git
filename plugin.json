@@ -2,9 +2,9 @@
   "apiVersion": 1,
   "extensions": ["panel", "tool.approval"],
   "id": "modera.git",
-  "name": "Git",
+  "name": "Change Review",
   "version": "0.1.0",
-  "description": "Inspect repositories, review diffs and explicitly stage or commit selected files.",
+  "description": "Review file changes in any workspace, with optional Git repository tools.",
   "author": "Modera",
   "category": "development",
   "icon": "git-branch",
@@ -101,8 +101,8 @@
   ],
   "locales": {
     "zh-CN": {
-      "name": "Git 版本管理",
-      "description": "查看变更、历史和分支，暂存指定文件并提交。"
+      "name": "变更审查",
+      "description": "普通文件夹也支持每轮变更审查；Git 仓库额外支持版本管理。"
     }
   }
 }

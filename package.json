@@ -2,7 +2,7 @@
   "name": "@modera-plugin/git",
   "version": "0.1.0",
   "type": "module",
-  "description": "Inspect repositories, review diffs and explicitly stage or commit selected files.",
+  "description": "Workspace change review with optional Git version management.",
   "files": [
     "plugin.json",
     "dist",
@@ -16,6 +16,7 @@
     "@modera/plugin-sdk": "0.1.0"
   },
   "dependencies": {
+    "ignore": "^7.0.5",
     "@modera/ui": "file:../../../modera-ui",
     "@codemirror/merge": "^6.11.0",
     "@codemirror/theme-one-dark": "^6.1.3",

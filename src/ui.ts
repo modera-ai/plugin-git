@@ -3,9 +3,9 @@ import type {
   PluginUiNode,
   PluginUiRequest,
 } from "@modera/plugin-sdk";
-import type { ChangeReview, GitRunChanges } from "./run-changes";
+import type { ChangeReview, WorkspaceChangeReview } from "./run-changes";
 
-export function gitUi(changes: GitRunChanges): PluginUiContribution[] {
+export function reviewUi(changes: WorkspaceChangeReview): PluginUiContribution[] {
   const selected = new Map<string, string>();
   const current = new Map<string, ChangeReview>();
   const key = (request: PluginUiRequest) =>
@@ -57,10 +57,10 @@ export function gitUi(changes: GitRunChanges): PluginUiContribution[] {
       slot: "panel",
       frontend: "review",
       launcher: {
-        title: "Git Changes",
+        title: "Change Review",
         description: "查看本轮和工作区文件变更",
         icon: "file",
-        locales: { "zh-CN": { title: "文件变更" } },
+        locales: { "zh-CN": { title: "变更审查" } },
       },
       requiredPermissions: ["workspace.read", "process.spawn"],
       actions: ["refresh", "file"],
@@ -98,10 +98,10 @@ export function gitUi(changes: GitRunChanges): PluginUiContribution[] {
               ? await changes.currentFile(context, review, path)
               : review.files.find((item) => item.path === path);
           return {
-            title,
+            title: review.runId ? (zh ? "本轮变更" : "Turn changes") : title,
             children: [],
             data: {
-              mode: resource.runId ? "turn" : "workspace",
+              mode: review.runId ? "turn" : "workspace",
               runId: review.runId,
               files: review.files.map(
                 ({ before: _before, after: _after, ...item }) => item,
