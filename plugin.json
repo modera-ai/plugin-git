@@ -9,6 +9,7 @@
   "category": "development",
   "icon": "git-branch",
   "main": "dist/index.cjs",
+  "frontends": { "review": { "root": "dist/ui", "entry": "index.html" } },
   "permissions": ["workspace.read", "workspace.write", "process.spawn"],
   "tools": [
     {

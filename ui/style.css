@@ -1,0 +1,344 @@
+:root {
+  color-scheme: light dark;
+  --review-page: var(--mu-page, #fff);
+  --review-card: var(--mu-card, #f8f9fb);
+  --review-ink: var(--mu-ink, #242831);
+  --review-muted: var(--mu-muted, #747b87);
+  --review-line: var(--mu-line, #e3e6eb);
+  --review-soft: var(--mu-soft, #f0f3f7);
+  --review-accent: var(--mu-accent, #6d64cd);
+  font:
+    12px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "Microsoft YaHei UI",
+    sans-serif;
+  color: var(--review-ink);
+  background: var(--review-page);
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 6px;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+button:hover:not(:disabled),
+button[aria-pressed="true"] {
+  background: var(--review-soft);
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--review-accent);
+  outline-offset: 1px;
+}
+svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+button svg {
+  vertical-align: middle;
+}
+.review-app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.review-toolbar {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--review-line);
+  flex-wrap: wrap;
+}
+.review-heading,
+.review-tools,
+.review-total {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.review-heading strong {
+  font-weight: 600;
+}
+.review-heading small {
+  color: var(--review-muted);
+}
+.review-tools {
+  gap: 3px;
+}
+.review-tools button {
+  width: 28px;
+  height: 28px;
+}
+.added {
+  color: #248354;
+}
+.removed {
+  color: #c34e54;
+}
+[data-theme="dark"] .added {
+  color: #6bc798;
+}
+[data-theme="dark"] .removed {
+  color: #ec8990;
+}
+.review-total {
+  gap: 4px;
+  font:
+    11px ui-monospace,
+    Consolas,
+    monospace;
+  white-space: nowrap;
+}
+.review-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.with-tree .review-layout {
+  grid-template-columns: minmax(0, 1fr) 210px;
+}
+.review-main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.review-file-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 39px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--review-line);
+}
+.review-file-heading > span:first-of-type {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-file-heading button {
+  padding: 4px;
+}
+.review-status {
+  font-size: 10px;
+  color: var(--review-muted);
+  white-space: nowrap;
+}
+.review-columns {
+  display: flex;
+  background: var(--review-card);
+  border-bottom: 1px solid var(--review-line);
+  color: var(--review-muted);
+  font-size: 11px;
+}
+.review-columns span {
+  flex: 1;
+  padding: 5px 12px;
+}
+.review-columns span + span {
+  border-left: 1px solid var(--review-line);
+}
+.review-diff {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.review-diff > .cm-editor,
+.review-diff > .cm-mergeView {
+  min-height: 100%;
+}
+.review-diff .cm-mergeView {
+  height: 100%;
+  overflow: auto;
+}
+.review-diff > .cm-editor {
+  height: 100%;
+}
+.review-diff .cm-mergeViewEditors {
+  min-height: 100%;
+}
+.review-diff .cm-merge-b {
+  border-left: 1px solid var(--review-line);
+}
+.review-diff .cm-changedLine,
+.review-diff .cm-changedText {
+  background: transparent;
+}
+.review-diff .cm-merge-a .cm-changedLine,
+.review-diff .cm-deletedChunk {
+  background: rgb(201 65 73 / 11%);
+}
+.review-diff .cm-merge-b .cm-changedLine,
+.review-diff .cm-editor:not(.cm-merge-a):not(.cm-merge-b) .cm-changedLine {
+  background: rgb(37 156 92 / 11%);
+}
+.review-diff .cm-insertedLine {
+  background: rgb(37 156 92 / 12%);
+}
+.review-diff .cm-deletedLine {
+  background: rgb(201 65 73 / 12%);
+}
+.review-diff .cm-deletedText {
+  background: rgb(201 65 73 / 19%);
+}
+.review-diff .cm-insertedText {
+  background: rgb(37 156 92 / 19%);
+}
+.review-diff .cm-collapsedLines {
+  font: 11px/1.5 inherit;
+  color: var(--review-muted);
+  background: var(--review-soft);
+  border-block: 1px solid var(--review-line);
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.review-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-top: 1px solid var(--review-line);
+  color: var(--review-muted);
+  font-size: 11px;
+}
+.review-pagination button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+}
+.review-files {
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid var(--review-line);
+  padding: 8px 4px;
+}
+.review-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px 8px;
+  padding: 5px 7px;
+  border: 1px solid var(--review-line);
+  border-radius: 7px;
+  color: var(--review-muted);
+}
+.review-search input {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+.mu-file-nav-row {
+  width: 100%;
+  min-height: 29px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  text-align: left;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+.mu-file-nav-row.active {
+  background: var(--review-soft);
+  color: var(--review-accent);
+}
+.mu-file-nav-row svg {
+  width: 13px;
+  height: 13px;
+}
+.mu-file-nav-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mu-file-nav-spacer {
+  width: 13px;
+  flex: none;
+}
+.mu-file-nav-stats {
+  display: flex;
+  gap: 3px;
+  font:
+    10px ui-monospace,
+    Consolas,
+    monospace;
+  white-space: nowrap;
+}
+.code-icon {
+  color: #8b78c9;
+}
+.json-icon,
+.package-icon {
+  color: #b58b4a;
+}
+.text-icon {
+  color: #5a9bcb;
+}
+.folder-icon {
+  color: var(--review-muted);
+}
+.review-empty {
+  margin: auto;
+  padding: 24px;
+  text-align: center;
+  color: var(--review-muted);
+}
+.review-empty > svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.5;
+}
+.review-notice {
+  padding: 8px 12px;
+  margin: 0;
+  color: var(--review-muted);
+  border-bottom: 1px solid var(--review-line);
+  overflow-wrap: anywhere;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 480px) {
+  .with-tree .review-layout {
+    grid-template-columns: minmax(0, 1fr) 160px;
+  }
+  .review-heading small,
+  .review-status {
+    display: none;
+  }
+}

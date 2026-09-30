@@ -1,8 +1,15 @@
-import type { PluginUiContribution, PluginUiNode } from "@modera/plugin-sdk";
-import { inspect } from "./index";
+import type {
+  PluginUiContribution,
+  PluginUiNode,
+  PluginUiRequest,
+} from "@modera/plugin-sdk";
+import type { ChangeReview, GitRunChanges } from "./run-changes";
 
-export function gitUi(): PluginUiContribution[] {
+export function gitUi(changes: GitRunChanges): PluginUiContribution[] {
   const selected = new Map<string, string>();
+  const current = new Map<string, ChangeReview>();
+  const key = (request: PluginUiRequest) =>
+    JSON.stringify([request.sessionId, request.resource ?? ""]);
   return [
     {
       id: "modera.git.approval",
@@ -33,7 +40,7 @@ export function gitUi(): PluginUiContribution[] {
             type: "document",
             label: "Git diff",
             text: preview.diff,
-            meta: preview.truncated ? "Truncated / 已截断" : undefined,
+            ...(preview.truncated ? { meta: "已截断 / Truncated" } : {}),
           });
         if (preview.note) children.push({ type: "text", text: preview.note });
         return {
@@ -48,81 +55,66 @@ export function gitUi(): PluginUiContribution[] {
     {
       id: "modera.git.panel",
       slot: "panel",
+      frontend: "review",
       launcher: {
-        title: "Git",
-        description: "查看工作区、暂存区和文件差异",
+        title: "Git Changes",
+        description: "查看本轮和工作区文件变更",
         icon: "file",
+        locales: { "zh-CN": { title: "文件变更" } },
       },
       requiredPermissions: ["workspace.read", "process.spawn"],
-      actions: ["refresh", "select", "clear"],
-      async act(action, context) {
-        if (action.id === "select" && action.value)
-          selected.set(context.sessionId, action.value);
-        if (action.id === "clear") selected.delete(context.sessionId);
+      actions: ["refresh", "file"],
+      async act(action, _context, request) {
+        if (action.id === "refresh") current.delete(key(request));
+        if (action.id === "file" && action.value)
+          selected.set(key(request), action.value);
       },
       async render(request, context) {
         const zh = request.locale.startsWith("zh");
-        const children: PluginUiNode[] = [
-          { type: "button", label: zh ? "刷新" : "Refresh", action: "refresh" },
-        ];
+        const resource = request.resource
+          ? (JSON.parse(request.resource) as { runId?: string; path?: string })
+          : {};
+        const title = resource.runId
+          ? zh
+            ? "本轮变更"
+            : "Turn changes"
+          : zh
+            ? "工作区变更"
+            : "Working tree changes";
         try {
-          const result = await inspect({ action: "status" }, context);
-          const files = result.files ?? [];
-          children.push({
-            type: "text",
-            text: zh
-              ? `共 ${files.length} 个变更文件 · 点击文件查看差异`
-              : `${files.length} changed files · Select to review`,
-          });
-          for (const file of files.slice(0, 40))
-            children.push({
-              type: "button",
-              label: `${file.index}${file.worktree} ${file.path}`.slice(0, 190),
-              action: "select",
-              value: file.path,
-            });
-          if (files.length > 40)
-            children.push({
-              type: "text",
-              text: zh
-                ? "仅显示前 40 项，完整列表可在对话中查询。"
-                : "Showing 40 files; ask in chat for the full list.",
-            });
-          const path = selected.get(context.sessionId);
-          if (path) {
-            children.push({ type: "text", text: path.slice(0, 190) });
-            for (const staged of [false, true]) {
-              const diff =
-                (
-                  await inspect(
-                    { action: "diff", paths: [path], staged },
-                    context,
-                  )
-                ).diff ?? "";
-              children.push({
-                type: "document",
-                label: staged
-                  ? zh
-                    ? "暂存区"
-                    : "Staged"
-                  : zh
-                    ? "工作区"
-                    : "Working tree",
-                text:
-                  diff.slice(0, 16000) ||
-                  (zh
-                    ? "无差异（未跟踪文件尚未纳入 Git diff）"
-                    : "No diff (untracked files are not in Git diff)"),
-                ...(diff.length > 16000
-                  ? { meta: zh ? "已截断" : "Truncated" }
-                  : {}),
-              });
-            }
+          let review = resource.runId
+            ? await changes.load(context, resource.runId)
+            : current.get(key(request));
+          if (!review) {
+            review = await changes.current(context);
+            current.set(key(request), review);
           }
+          const path =
+            selected.get(key(request)) ??
+            resource.path ??
+            review.files[0]?.path;
+          const file =
+            path && !resource.runId
+              ? await changes.currentFile(context, review, path)
+              : review.files.find((item) => item.path === path);
+          return {
+            title,
+            children: [],
+            data: {
+              mode: resource.runId ? "turn" : "workspace",
+              runId: review.runId,
+              files: review.files.map(
+                ({ before: _before, after: _after, ...item }) => item,
+              ),
+              added: review.added,
+              removed: review.removed,
+              incomplete: review.incomplete,
+              ...(file ? { selected: file } : {}),
+            },
+          };
         } catch (error) {
-          children.push({ type: "text", text: String(error).slice(0, 190) });
+          return { title, children: [], data: { error: String(error) } };
         }
-        return { title: "Git", scroll: true, children };
       },
     },
   ];

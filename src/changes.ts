@@ -132,7 +132,7 @@ export class GitChanges {
       ...after,
       sessionId: context.sessionId,
       runId: context.runId,
-      toolCallId: context.toolCallId,
+      ...(context.toolCallId ? { toolCallId: context.toolCallId } : {}),
     });
     return {
       input: { token },

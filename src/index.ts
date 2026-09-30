@@ -9,6 +9,7 @@ import {
 import manifest from "../plugin.json";
 import { gitUi } from "./ui";
 import { GitChanges } from "./changes";
+import { GitRunChanges } from "./run-changes";
 
 export type Input = {
   action: string;
@@ -109,7 +110,7 @@ export async function inspect(input: Input, context: ToolContext) {
         index: string;
         worktree: string;
         path: string;
-        originalPath?: string;
+        originalPath?: string | undefined;
       }[] = [];
       for (let i = 0; i < records.length; i++) {
         const record = records[i];
@@ -228,9 +229,11 @@ export async function change(input: Input, context: ToolContext) {
 
 export const activate: PluginModule["activate"] = async (host) => {
   const changes = new GitChanges();
+  const runChanges = new GitRunChanges(host.storagePath);
   host.signal.addEventListener("abort", () => changes.clear(), { once: true });
   return {
-    ui: gitUi(),
+    runChanges,
+    ui: gitUi(runChanges),
     tools: declaredTools(manifest).map((definition) => ({
       definition,
       isAvailable: (context) => !!context.workspacePath,
