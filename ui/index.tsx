@@ -443,7 +443,7 @@ function App() {
                       if (!patch) throw Error("No patch available");
                       let marker = "MODERA_PATCH";
                       while (patch.includes(marker)) marker += "_";
-                      await navigator.clipboard.writeText(
+                      await frontend().copyText(
                         `git apply <<'${marker}'\n${patch}\n${marker}`,
                       );
                       setNotice(
