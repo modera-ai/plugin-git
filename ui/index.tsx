@@ -396,10 +396,10 @@ function App() {
                     </summary>
                     <div className="review-commits">
                       {data.git.commits.map((item) => (
-                        <button
-                          key={item.ref}
+                        <Tooltip key={item.ref} content={item.ref}><button
+
                           onClick={() => scope("commit", item.ref)}
-                          title={item.ref}
+
                         >
                           {item.label}
                           <small>
@@ -413,7 +413,7 @@ function App() {
                           {data.scope?.ref === item.ref && (
                             <Check className="review-check" />
                           )}
-                        </button>
+                        </button></Tooltip>
                       ))}
                     </div>
                   </details>
