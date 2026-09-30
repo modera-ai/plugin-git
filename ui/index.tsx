@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type ButtonHTMLAttributes } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  createContext,
+  useContext,
+  type ButtonHTMLAttributes,
+} from "react";
 import { Tooltip } from "@modera/ui/tooltip";
 import "@modera/ui/tooltip.css";
 import { createRoot } from "react-dom/client";
@@ -43,14 +50,22 @@ import type { RunChangedFile } from "@modera/plugin-sdk";
 import { RenderedPreview, supportsPreview } from "./RenderedPreview";
 
 type FileChange = RunChangedFile & { before?: string; after?: string };
+const ReviewTheme = createContext<"light" | "dark">("light");
 function ReviewButton({
   title,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement>) {
+  const theme = useContext(ReviewTheme);
   const button = (
     <button {...props} aria-label={props["aria-label"] ?? title} />
   );
-  return title ? <Tooltip content={title}>{button}</Tooltip> : button;
+  return title ? (
+    <Tooltip content={title} theme={theme}>
+      {button}
+    </Tooltip>
+  ) : (
+    button
+  );
 }
 type Data = {
   scope?: { kind: string; ref?: string };
@@ -328,460 +343,471 @@ function App() {
       ),
     })[reason] ?? t("此文件无法显示文本差异。", "Text diff unavailable.");
   return (
-    <div
-      ref={root}
-      className={`review-app${showTree ? " with-tree" : ""}`}
-      data-theme={snapshot?.theme?.mode ?? "light"}
-    >
-      <header className="review-toolbar">
-        <div className="review-heading">
-          <FileDiff />
-          {data?.git ? (
-            <details ref={scopeMenu} className="review-menu">
+    <ReviewTheme.Provider value={snapshot?.theme?.mode ?? "light"}>
+      <div
+        ref={root}
+        className={`review-app${showTree ? " with-tree" : ""}`}
+        data-theme={snapshot?.theme?.mode ?? "light"}
+      >
+        <header className="review-toolbar">
+          <div className="review-heading">
+            <FileDiff />
+            {data?.git ? (
+              <details ref={scopeMenu} className="review-menu">
+                <summary>
+                  {scopeLabel}
+                  <ChevronDown />
+                </summary>
+                <div className="review-menu-panel">
+                  {["turn", "uncommitted", "unstaged", "staged"].map((kind) => (
+                    <button
+                      key={kind}
+                      className={
+                        kind === "uncommitted"
+                          ? "review-group-start"
+                          : undefined
+                      }
+                      onClick={(event) => {
+                        event.currentTarget
+                          .closest("details")
+                          ?.removeAttribute("open");
+                        scope(kind);
+                      }}
+                    >
+                      {
+                        (
+                          {
+                            turn: t("上一轮", "Last turn"),
+                            uncommitted: t("未提交", "Uncommitted"),
+                            unstaged: t("未暂存", "Unstaged"),
+                            staged: t("已暂存", "Staged"),
+                          } as Record<string, string>
+                        )[kind]
+                      }
+                      {data.scope?.kind === kind && (
+                        <Check className="review-check" />
+                      )}
+                    </button>
+                  ))}
+                  <details className="review-submenu">
+                    <summary>
+                      {t("已提交", "Commits")}
+                      <ChevronRight />
+                    </summary>
+                    <div className="review-commits">
+                      {data.git.commits.map((item) => (
+                        <button
+                          key={item.ref}
+                          onClick={() => scope("commit", item.ref)}
+                          title={item.ref}
+                        >
+                          {item.label}
+                          <small>
+                            {item.date
+                              ? new Intl.DateTimeFormat(zh ? "zh-CN" : "en", {
+                                  month: "short",
+                                  day: "numeric",
+                                }).format(new Date(item.date))
+                              : ""}
+                          </small>
+                          {data.scope?.ref === item.ref && (
+                            <Check className="review-check" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </details>
+                  <button
+                    onClick={() =>
+                      scope(
+                        "branch",
+                        data.git!.branches.find(
+                          (item) => item.label !== data.git!.currentBranch,
+                        )?.ref ?? data.git!.branches[0]?.ref,
+                      )
+                    }
+                  >
+                    {t("分支", "Branches")}
+                    {data.scope?.kind === "branch" && (
+                      <Check className="review-check" />
+                    )}
+                  </button>
+                </div>
+              </details>
+            ) : (
+              <strong>
+                {data?.mode === "turn"
+                  ? t("本轮变更", "Turn changes")
+                  : t("工作区变更", "Working tree changes")}
+              </strong>
+            )}
+            <span className="review-total">
+              <span className="added">+{data?.added ?? 0}</span>
+              <span className="removed">−{data?.removed ?? 0}</span>
+            </span>
+            <small>
+              {files.length} {t("个文件", "files")}
+            </small>
+          </div>
+          <div className="review-tools">
+            <details ref={menu} className="review-menu">
+              <Tooltip
+                content={t("查看选项", "View options")}
+                theme={snapshot?.theme?.mode ?? "light"}
+              >
+                <summary aria-label={t("查看选项", "View options")}>
+                  <MoreHorizontal />
+                </summary>
+              </Tooltip>
+              <div className="review-menu-panel">
+                <button onClick={() => setFull(!full)}>
+                  <FileText />
+                  {t("加载完整文件", "Full file context")}
+                  {full && <Check className="review-check" />}
+                </button>
+                <button onClick={() => setWords(!words)}>
+                  <WholeWord />
+                  {t("词级差异", "Word-level differences")}
+                  {words && <Check className="review-check" />}
+                </button>
+                <button onClick={() => setWhitespace(!whitespace)}>
+                  <EyeOff />
+                  {t("忽略空白差异", "Ignore whitespace changes")}
+                  {whitespace && <Check className="review-check" />}
+                </button>
+                <button
+                  disabled={
+                    !displayed.some(
+                      (item) =>
+                        supportsPreview(item.path) &&
+                        (!item.unavailable || item.unavailable === "complex"),
+                    )
+                  }
+                  onClick={() => {
+                    setPreview(!preview);
+                    menu.current?.removeAttribute("open");
+                  }}
+                >
+                  <Image />
+                  {t("渲染预览", "Rendered preview")}
+                  {preview && <Check className="review-check" />}
+                </button>
+                {data?.git && (
+                  <button
+                    disabled={!file || !!file.unavailable || busy}
+                    onClick={async () => {
+                      try {
+                        const result = await frontend().action("patch");
+                        const patch = (result.view.data as Data).patch;
+                        if (!patch) throw Error("No patch available");
+                        let marker = "MODERA_PATCH";
+                        while (patch.includes(marker)) marker += "_";
+                        await frontend().copyText(
+                          `git apply <<'${marker}'\n${patch}\n${marker}`,
+                        );
+                        setNotice(
+                          t(
+                            "已复制当前文件的 git apply 命令",
+                            "Copied git apply command for the current file",
+                          ),
+                        );
+                      } catch (cause) {
+                        setNotice(String(cause));
+                      }
+                    }}
+                  >
+                    <Copy />
+                    {t("复制 git apply 命令", "Copy git apply command")}
+                  </button>
+                )}
+              </div>
+            </details>
+            <ReviewButton
+              title={
+                split
+                  ? t("切换为单列差异", "Switch to unified diff")
+                  : t("左右对照", "Side by side")
+              }
+              aria-pressed={split}
+              onClick={() => setMode(split ? "unified" : "split")}
+            >
+              {split ? <Columns2 /> : <List />}
+            </ReviewButton>
+            {data?.overview && (
+              <ReviewButton
+                title={
+                  displayed.every((item) => closed[item.path])
+                    ? t("展开全部差异", "Expand all diffs")
+                    : t("收起全部差异", "Collapse all diffs")
+                }
+                onClick={() => {
+                  const collapse = !displayed.every(
+                    (item) => closed[item.path],
+                  );
+                  setClosed(
+                    Object.fromEntries(
+                      displayed.map((item) => [item.path, collapse]),
+                    ),
+                  );
+                }}
+              >
+                <ListCollapse />
+              </ReviewButton>
+            )}
+            <ReviewButton
+              title={t("文件导航", "File navigation")}
+              aria-pressed={showTree}
+              onClick={() => setTree(!showTree)}
+            >
+              <FolderTree />
+            </ReviewButton>
+            {data?.mode === "workspace" && (
+              <ReviewButton
+                disabled={busy}
+                title={t("刷新", "Refresh")}
+                onClick={() => void act("refresh")}
+              >
+                <RefreshCw className={busy ? "spin" : ""} />
+              </ReviewButton>
+            )}
+          </div>
+        </header>
+        {data?.git && data.scope?.kind === "branch" && (
+          <div className="review-branch-row">
+            <span>{data.git.currentBranch}</span>
+            <span>→</span>
+            <details className="review-menu">
               <summary>
-                {scopeLabel}
+                {data.git.branches.find((item) => item.ref === data.scope?.ref)
+                  ?.label ?? t("选择分支", "Choose branch")}
                 <ChevronDown />
               </summary>
               <div className="review-menu-panel">
-                {["turn", "uncommitted", "unstaged", "staged"].map((kind) => (
-                  <button
-                    key={kind}
-                    className={
-                      kind === "uncommitted" ? "review-group-start" : undefined
-                    }
-                    onClick={(event) => {
-                      event.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                      scope(kind);
-                    }}
-                  >
-                    {
-                      (
-                        {
-                          turn: t("上一轮", "Last turn"),
-                          uncommitted: t("未提交", "Uncommitted"),
-                          unstaged: t("未暂存", "Unstaged"),
-                          staged: t("已暂存", "Staged"),
-                        } as Record<string, string>
-                      )[kind]
-                    }
-                    {data.scope?.kind === kind && (
-                      <Check className="review-check" />
-                    )}
-                  </button>
-                ))}
-                <details className="review-submenu">
-                  <summary>
-                    {t("已提交", "Commits")}
-                    <ChevronRight />
-                  </summary>
-                  <div className="review-commits">
-                    {data.git.commits.map((item) => (
-                      <button
-                        key={item.ref}
-                        onClick={() => scope("commit", item.ref)}
-                        title={item.ref}
-                      >
-                        {item.label}
-                        <small>
-                          {item.date
-                            ? new Intl.DateTimeFormat(zh ? "zh-CN" : "en", {
-                                month: "short",
-                                day: "numeric",
-                              }).format(new Date(item.date))
-                            : ""}
-                        </small>
-                        {data.scope?.ref === item.ref && (
-                          <Check className="review-check" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </details>
-                <button
-                  onClick={() =>
-                    scope(
-                      "branch",
-                      data.git!.branches.find(
-                        (item) => item.label !== data.git!.currentBranch,
-                      )?.ref ?? data.git!.branches[0]?.ref,
-                    )
-                  }
-                >
-                  {t("分支", "Branches")}
-                  {data.scope?.kind === "branch" && (
-                    <Check className="review-check" />
-                  )}
-                </button>
+                <label className="review-search">
+                  <Search />
+                  <input
+                    placeholder={t("搜索分支", "Search branches")}
+                    value={branchQuery}
+                    onChange={(event) => setBranchQuery(event.target.value)}
+                  />
+                </label>
+                {data.git.branches
+                  .filter((item) =>
+                    item.label
+                      .toLowerCase()
+                      .includes(branchQuery.toLowerCase()),
+                  )
+                  .map((item) => (
+                    <button
+                      key={item.ref}
+                      onClick={(event) => {
+                        event.currentTarget
+                          .closest("details")
+                          ?.removeAttribute("open");
+                        scope("branch", item.ref);
+                      }}
+                    >
+                      <GitBranch />
+                      {item.label}
+                      {item.ref === data.scope?.ref && (
+                        <Check className="review-check" />
+                      )}
+                    </button>
+                  ))}
               </div>
             </details>
-          ) : (
-            <strong>
-              {data?.mode === "turn"
-                ? t("本轮变更", "Turn changes")
-                : t("工作区变更", "Working tree changes")}
-            </strong>
-          )}
-          <span className="review-total">
-            <span className="added">+{data?.added ?? 0}</span>
-            <span className="removed">−{data?.removed ?? 0}</span>
-          </span>
-          <small>
-            {files.length} {t("个文件", "files")}
-          </small>
-        </div>
-        <div className="review-tools">
-          <details ref={menu} className="review-menu">
-            <Tooltip content={t("查看选项", "View options")}>
-              <summary aria-label={t("查看选项", "View options")}>
-                <MoreHorizontal />
-              </summary>
-            </Tooltip>
-            <div className="review-menu-panel">
-              <button onClick={() => setFull(!full)}>
-                <FileText />
-                {t("加载完整文件", "Full file context")}
-                {full && <Check className="review-check" />}
-              </button>
-              <button onClick={() => setWords(!words)}>
-                <WholeWord />
-                {t("词级差异", "Word-level differences")}
-                {words && <Check className="review-check" />}
-              </button>
-              <button onClick={() => setWhitespace(!whitespace)}>
-                <EyeOff />
-                {t("忽略空白差异", "Ignore whitespace changes")}
-                {whitespace && <Check className="review-check" />}
-              </button>
-              <button
-                disabled={
-                  !displayed.some(
-                    (item) =>
-                      supportsPreview(item.path) &&
-                      (!item.unavailable || item.unavailable === "complex"),
-                  )
-                }
-                onClick={() => {
-                  setPreview(!preview);
-                  menu.current?.removeAttribute("open");
-                }}
-              >
-                <Image />
-                {t("渲染预览", "Rendered preview")}
-                {preview && <Check className="review-check" />}
-              </button>
-              {data?.git && (
-                <button
-                  disabled={!file || !!file.unavailable || busy}
-                  onClick={async () => {
-                    try {
-                      const result = await frontend().action("patch");
-                      const patch = (result.view.data as Data).patch;
-                      if (!patch) throw Error("No patch available");
-                      let marker = "MODERA_PATCH";
-                      while (patch.includes(marker)) marker += "_";
-                      await frontend().copyText(
-                        `git apply <<'${marker}'\n${patch}\n${marker}`,
-                      );
-                      setNotice(
-                        t(
-                          "已复制当前文件的 git apply 命令",
-                          "Copied git apply command for the current file",
-                        ),
-                      );
-                    } catch (cause) {
-                      setNotice(String(cause));
-                    }
-                  }}
+          </div>
+        )}
+        {!!files.length && !data?.overview && (
+          <p className="review-notice">
+            {t(
+              "此差异较大，每次仅显示一个文件",
+              "This diff is large; showing one file at a time",
+            )}
+          </p>
+        )}
+        {(notice || error || data?.error) && (
+          <p role="alert" className="review-notice">
+            {notice || error || data?.error}
+          </p>
+        )}
+        {data?.incomplete && (
+          <p className="review-notice">
+            {t(
+              "本轮文件较多，部分内容未保存；统计仅包含已记录的文件。",
+              "Some changes were not recorded; totals cover recorded files only.",
+            )}
+          </p>
+        )}
+        <div className="review-layout">
+          <main className="review-main" aria-busy={busy}>
+            {!snapshot ? (
+              <p className="review-empty">
+                {t("正在加载变更…", "Loading changes…")}
+              </p>
+            ) : !files.length ? (
+              <div className="review-empty">
+                <FileDiff />
+                <p>{t("没有文件变更", "No changed files")}</p>
+              </div>
+            ) : (
+              displayed.map((file) => (
+                <section
+                  key={file.path}
+                  className="review-section"
+                  data-file={file.path}
                 >
-                  <Copy />
-                  {t("复制 git apply 命令", "Copy git apply command")}
+                  <header className="review-file-heading">
+                    {data?.overview && (
+                      <ReviewButton
+                        title={t("展开 / 收起", "Expand / collapse")}
+                        aria-expanded={!closed[file.path]}
+                        onClick={() =>
+                          setClosed({
+                            ...closed,
+                            [file.path]: !closed[file.path],
+                          })
+                        }
+                      >
+                        <ChevronDown
+                          style={{
+                            transform: closed[file.path]
+                              ? "rotate(-90deg)"
+                              : undefined,
+                          }}
+                        />
+                      </ReviewButton>
+                    )}
+                    <FileTypeIcon path={file.path} />
+                    <span>
+                      <span className="review-path-directory">
+                        {file.path.includes("/")
+                          ? file.path.slice(0, file.path.lastIndexOf("/") + 1)
+                          : ""}
+                      </span>
+                      {file.path.split("/").at(-1)}
+                    </span>
+                    <span className="review-status">
+                      {file.status === "added"
+                        ? t("新增", "Added")
+                        : file.status === "deleted"
+                          ? t("删除", "Deleted")
+                          : t("修改", "Modified")}
+                    </span>
+                    <span className="review-total">
+                      <span className="added">+{file.added}</span>
+                      <span className="removed">−{file.removed}</span>
+                    </span>
+                    {file.status !== "deleted" && (
+                      <ReviewButton
+                        title={t("在文件浏览器中打开", "Open in file browser")}
+                        onClick={() => {
+                          void frontend()
+                            .openFile(file.path)
+                            .catch((cause) => setNotice(String(cause)));
+                        }}
+                      >
+                        <SquareArrowOutUpRight />
+                      </ReviewButton>
+                    )}
+                  </header>
+                  {!closed[file.path] && (
+                    <>
+                      <div className="review-columns">
+                        {split ? (
+                          <>
+                            <span>{t("修改前", "Before")}</span>
+                            <span>{t("修改后", "After")}</span>
+                          </>
+                        ) : (
+                          <span>
+                            {preview && supportsPreview(file.path)
+                              ? file.status === "deleted"
+                                ? t("修改前预览", "Before preview")
+                                : t("修改后预览", "After preview")
+                              : t("修改前后差异", "Changes")}
+                          </span>
+                        )}
+                      </div>
+                      {file.unavailable && file.unavailable !== "complex" ? (
+                        <p className="review-empty">
+                          {unavailable(file.unavailable)}
+                        </p>
+                      ) : preview && supportsPreview(file.path) ? (
+                        <RenderedPreview file={file} split={split} zh={zh} />
+                      ) : (
+                        <Diff
+                          file={file}
+                          split={split}
+                          dark={snapshot.theme?.mode === "dark"}
+                          words={words}
+                          full={full}
+                          whitespace={whitespace}
+                        />
+                      )}
+                    </>
+                  )}
+                </section>
+              ))
+            )}
+            {!!files.length && (
+              <footer className="review-pagination">
+                <button
+                  disabled={busy || index <= 0}
+                  onClick={() => void act("file", files[index - 1]!.path)}
+                >
+                  <ChevronLeft />
+                  {t("上一个文件", "Previous file")}
                 </button>
-              )}
-            </div>
-          </details>
-          <ReviewButton
-            title={
-              split
-                ? t("切换为单列差异", "Switch to unified diff")
-                : t("左右对照", "Side by side")
-            }
-            aria-pressed={split}
-            onClick={() => setMode(split ? "unified" : "split")}
-          >
-            {split ? <Columns2 /> : <List />}
-          </ReviewButton>
-          {data?.overview && (
-            <ReviewButton
-              title={
-                displayed.every((item) => closed[item.path])
-                  ? t("展开全部差异", "Expand all diffs")
-                  : t("收起全部差异", "Collapse all diffs")
-              }
-              onClick={() => {
-                const collapse = !displayed.every((item) => closed[item.path]);
-                setClosed(
-                  Object.fromEntries(
-                    displayed.map((item) => [item.path, collapse]),
-                  ),
-                );
-              }}
-            >
-              <ListCollapse />
-            </ReviewButton>
-          )}
-          <ReviewButton
-            title={t("文件导航", "File navigation")}
-            aria-pressed={showTree}
-            onClick={() => setTree(!showTree)}
-          >
-            <FolderTree />
-          </ReviewButton>
-          {data?.mode === "workspace" && (
-            <ReviewButton
-              disabled={busy}
-              title={t("刷新", "Refresh")}
-              onClick={() => void act("refresh")}
-            >
-              <RefreshCw className={busy ? "spin" : ""} />
-            </ReviewButton>
-          )}
-        </div>
-      </header>
-      {data?.git && data.scope?.kind === "branch" && (
-        <div className="review-branch-row">
-          <span>{data.git.currentBranch}</span>
-          <span>→</span>
-          <details className="review-menu">
-            <summary>
-              {data.git.branches.find((item) => item.ref === data.scope?.ref)
-                ?.label ?? t("选择分支", "Choose branch")}
-              <ChevronDown />
-            </summary>
-            <div className="review-menu-panel">
+                <span>
+                  {index + 1} / {files.length}
+                </span>
+                <button
+                  disabled={busy || index >= files.length - 1}
+                  onClick={() => void act("file", files[index + 1]!.path)}
+                >
+                  {t("下一个文件", "Next file")}
+                  <ChevronRight />
+                </button>
+              </footer>
+            )}
+          </main>
+          {showTree && (
+            <aside className="review-files">
               <label className="review-search">
                 <Search />
                 <input
-                  placeholder={t("搜索分支", "Search branches")}
-                  value={branchQuery}
-                  onChange={(event) => setBranchQuery(event.target.value)}
+                  aria-label={t("筛选变更文件", "Filter changed files")}
+                  placeholder={t("筛选文件…", "Filter files…")}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
                 />
               </label>
-              {data.git.branches
-                .filter((item) =>
-                  item.label.toLowerCase().includes(branchQuery.toLowerCase()),
-                )
-                .map((item) => (
-                  <button
-                    key={item.ref}
-                    onClick={(event) => {
-                      event.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                      scope("branch", item.ref);
-                    }}
-                  >
-                    <GitBranch />
-                    {item.label}
-                    {item.ref === data.scope?.ref && (
-                      <Check className="review-check" />
-                    )}
-                  </button>
-                ))}
-            </div>
-          </details>
-        </div>
-      )}
-      {!!files.length && !data?.overview && (
-        <p className="review-notice">
-          {t(
-            "此差异较大，每次仅显示一个文件",
-            "This diff is large; showing one file at a time",
-          )}
-        </p>
-      )}
-      {(notice || error || data?.error) && (
-        <p role="alert" className="review-notice">
-          {notice || error || data?.error}
-        </p>
-      )}
-      {data?.incomplete && (
-        <p className="review-notice">
-          {t(
-            "本轮文件较多，部分内容未保存；统计仅包含已记录的文件。",
-            "Some changes were not recorded; totals cover recorded files only.",
-          )}
-        </p>
-      )}
-      <div className="review-layout">
-        <main className="review-main" aria-busy={busy}>
-          {!snapshot ? (
-            <p className="review-empty">
-              {t("正在加载变更…", "Loading changes…")}
-            </p>
-          ) : !files.length ? (
-            <div className="review-empty">
-              <FileDiff />
-              <p>{t("没有文件变更", "No changed files")}</p>
-            </div>
-          ) : (
-            displayed.map((file) => (
-              <section
-                key={file.path}
-                className="review-section"
-                data-file={file.path}
-              >
-                <header className="review-file-heading">
-                  {data?.overview && (
-                    <ReviewButton
-                      title={t("展开 / 收起", "Expand / collapse")}
-                      aria-expanded={!closed[file.path]}
-                      onClick={() =>
-                        setClosed({
-                          ...closed,
-                          [file.path]: !closed[file.path],
-                        })
-                      }
-                    >
-                      <ChevronDown
-                        style={{
-                          transform: closed[file.path]
-                            ? "rotate(-90deg)"
-                            : undefined,
-                        }}
-                      />
-                    </ReviewButton>
-                  )}
-                  <FileTypeIcon path={file.path} />
-                  <span>
-                    <span className="review-path-directory">
-                      {file.path.includes("/")
-                        ? file.path.slice(0, file.path.lastIndexOf("/") + 1)
-                        : ""}
-                    </span>
-                    {file.path.split("/").at(-1)}
-                  </span>
-                  <span className="review-status">
-                    {file.status === "added"
-                      ? t("新增", "Added")
-                      : file.status === "deleted"
-                        ? t("删除", "Deleted")
-                        : t("修改", "Modified")}
-                  </span>
-                  <span className="review-total">
-                    <span className="added">+{file.added}</span>
-                    <span className="removed">−{file.removed}</span>
-                  </span>
-                  {file.status !== "deleted" && (
-                    <ReviewButton
-                      title={t("在文件浏览器中打开", "Open in file browser")}
-                      onClick={() => {
-                        void frontend()
-                          .openFile(file.path)
-                          .catch((cause) => setNotice(String(cause)));
-                      }}
-                    >
-                      <SquareArrowOutUpRight />
-                    </ReviewButton>
-                  )}
-                </header>
-                {!closed[file.path] && (
-                  <>
-                    <div className="review-columns">
-                      {split ? (
-                        <>
-                          <span>{t("修改前", "Before")}</span>
-                          <span>{t("修改后", "After")}</span>
-                        </>
-                      ) : (
-                        <span>
-                          {preview && supportsPreview(file.path)
-                            ? file.status === "deleted"
-                              ? t("修改前预览", "Before preview")
-                              : t("修改后预览", "After preview")
-                            : t("修改前后差异", "Changes")}
-                        </span>
-                      )}
-                    </div>
-                    {file.unavailable && file.unavailable !== "complex" ? (
-                      <p className="review-empty">
-                        {unavailable(file.unavailable)}
-                      </p>
-                    ) : preview && supportsPreview(file.path) ? (
-                      <RenderedPreview file={file} split={split} zh={zh} />
-                    ) : (
-                      <Diff
-                        file={file}
-                        split={split}
-                        dark={snapshot.theme?.mode === "dark"}
-                        words={words}
-                        full={full}
-                        whitespace={whitespace}
-                      />
-                    )}
-                  </>
+              <FileNavigationTree
+                items={files.filter((item) =>
+                  item.path.toLowerCase().includes(query.toLowerCase()),
                 )}
-              </section>
-            ))
-          )}
-          {!!files.length && (
-            <footer className="review-pagination">
-              <button
-                disabled={busy || index <= 0}
-                onClick={() => void act("file", files[index - 1]!.path)}
-              >
-                <ChevronLeft />
-                {t("上一个文件", "Previous file")}
-              </button>
-              <span>
-                {index + 1} / {files.length}
-              </span>
-              <button
-                disabled={busy || index >= files.length - 1}
-                onClick={() => void act("file", files[index + 1]!.path)}
-              >
-                {t("下一个文件", "Next file")}
-                <ChevronRight />
-              </button>
-            </footer>
-          )}
-        </main>
-        {showTree && (
-          <aside className="review-files">
-            <label className="review-search">
-              <Search />
-              <input
-                aria-label={t("筛选变更文件", "Filter changed files")}
-                placeholder={t("筛选文件…", "Filter files…")}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                selected={file?.path}
+                label={t("变更文件", "Changed files")}
+                onSelect={(path) => {
+                  setClosed((previous) => ({ ...previous, [path]: false }));
+                  requestAnimationFrame(() =>
+                    Array.from(
+                      root.current?.querySelectorAll<HTMLElement>(
+                        ".review-section",
+                      ) ?? [],
+                    )
+                      .find((element) => element.dataset.file === path)
+                      ?.scrollIntoView({ block: "start" }),
+                  );
+                  if (!busy) void act("file", path);
+                }}
               />
-            </label>
-            <FileNavigationTree
-              items={files.filter((item) =>
-                item.path.toLowerCase().includes(query.toLowerCase()),
-              )}
-              selected={file?.path}
-              label={t("变更文件", "Changed files")}
-              onSelect={(path) => {
-                setClosed((previous) => ({ ...previous, [path]: false }));
-                requestAnimationFrame(() =>
-                  Array.from(
-                    root.current?.querySelectorAll<HTMLElement>(
-                      ".review-section",
-                    ) ?? [],
-                  )
-                    .find((element) => element.dataset.file === path)
-                    ?.scrollIntoView({ block: "start" }),
-                );
-                if (!busy) void act("file", path);
-              }}
-            />
-          </aside>
-        )}
+            </aside>
+          )}
+        </div>
       </div>
-    </div>
+    </ReviewTheme.Provider>
   );
 }
 createRoot(document.getElementById("root")!).render(<App />);
