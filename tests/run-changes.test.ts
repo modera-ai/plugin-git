@@ -38,6 +38,43 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 describe("per-turn Git changes", () => {
+  it("compares staged, unstaged, immutable commits and branches independently", async () => {
+    const changes = new WorkspaceChangeReview(storage);
+    const initial = git("rev-parse", "HEAD").trim();
+    git("branch", "baseline");
+    await writeFile(join(workspace, "file.ts"), "const value = 2;\n");
+    git("add", "file.ts");
+    await writeFile(join(workspace, "file.ts"), "const value = 3;\n");
+    const staged = await changes.current(context(), { kind: "staged" });
+    expect(
+      (await changes.currentFile(context(), staged, "file.ts"))?.after,
+    ).toBe("const value = 2;\n");
+    const unstaged = await changes.current(context(), { kind: "unstaged" });
+    expect(
+      (await changes.currentFile(context(), unstaged, "file.ts"))?.before,
+    ).toBe("const value = 2;\n");
+    git("commit", "-qm", "second");
+    const committed = await changes.current(context(), {
+      kind: "commit",
+      ref: git("rev-parse", "HEAD").trim(),
+    });
+    expect(
+      (await changes.currentFile(context(), committed, "file.ts"))?.after,
+    ).toBe("const value = 2;\n");
+    const branch = await changes.current(context(), {
+      kind: "branch",
+      ref: "refs/heads/baseline",
+    });
+    expect(branch.files.map((file) => file.path)).toEqual(["file.ts"]);
+    const first = await changes.current(context(), {
+      kind: "commit",
+      ref: initial,
+    });
+    expect(first.files.length).toBe(2);
+    await expect(
+      changes.current(context(), { kind: "commit", ref: "--output=evil" }),
+    ).rejects.toThrow();
+  });
   it("excludes pre-existing edits and coalesces repeated edits from the actual baseline", async () => {
     await writeFile(join(workspace, "file.ts"), "const value = 7;\n");
     await writeFile(join(workspace, "existing.txt"), "user draft\n");

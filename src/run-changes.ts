@@ -18,6 +18,7 @@ import type {
 } from "@modera/plugin-sdk";
 import { git, repository, selectedPaths } from "./git-backend";
 import { workspaceFiles } from "./workspace-snapshot";
+import { reviewOptions, type ReviewScope } from "./review-scopes";
 
 const FILE_LIMIT = 1024 * 1024;
 const TOTAL_LIMIT = 32 * 1024 * 1024;
@@ -27,6 +28,7 @@ type Content = { hash: string; text?: string; unavailable?: string };
 export type ChangedFile = RunChangedFile & { before?: string; after?: string };
 export interface ChangeReview {
   baseHead?: string;
+  targetRef?: string;
   projectId?: string | undefined;
   sessionId: string;
   runId: string;
@@ -74,6 +76,26 @@ async function headFile(
   signal: AbortSignal,
 ): Promise<Content | null> {
   if (!head) return null;
+  if (head === "INDEX") {
+    const entries = await git(
+      root,
+      ["ls-files", "--stage", "-z", "--", path],
+      signal,
+    );
+    const item = entries
+      .split("\0")
+      .find((line) => line.split("\t")[0]?.endsWith(" 0"));
+    if (!item) return null;
+    const id = item.split("\t")[0]!.split(" ")[1]!;
+    if (
+      Number((await git(root, ["cat-file", "-s", id], signal)).trim()) >
+      FILE_LIMIT
+    )
+      return { hash: id, unavailable: "large" };
+    return content(
+      Buffer.from(await git(root, ["cat-file", "blob", id], signal)),
+    );
+  }
   const object = await git(root, ["ls-tree", "-z", head, "--", path], signal);
   if (!object) return null;
   const id = object.split("\t")[0]!.split(" ").at(-1)!;
@@ -258,9 +280,14 @@ export class WorkspaceChangeReview {
       throw new Error("Change review scope mismatch");
     return review;
   }
-  async current(context: ToolContext): Promise<ChangeReview> {
+  async current(
+    context: ToolContext,
+    scope: ReviewScope = { kind: "uncommitted" },
+  ): Promise<ChangeReview> {
     const root = await repository(context).catch(() => undefined);
     if (!root) {
+      if (!["turn", "uncommitted"].includes(scope.kind))
+        throw Error("Git comparison is unavailable in this workspace");
       const latest = await readFile(
         join(dirname(this.path(context.sessionId, "")), "latest.json"),
         "utf8",
@@ -278,16 +305,74 @@ export class WorkspaceChangeReview {
         removed: 0,
       };
     }
-    const head = await headOf(root, context.signal);
-    const paths = await dirtyPaths(root, head, context.signal),
-      files: ChangedFile[] = [];
-    const numbers = head
+    let head = await headOf(root, context.signal),
+      targetRef: string | undefined;
+    let comparison: string[] = ["diff"];
+    if (!head && scope.kind === "uncommitted") comparison.push("--cached");
+    if (scope.kind === "staged") {
+      targetRef = "INDEX";
+      comparison.push("--cached");
+    }
+    if (scope.kind === "unstaged") head = "INDEX";
+    if (scope.kind === "commit" || scope.kind === "branch") {
+      const options = await reviewOptions(context);
+      const list =
+        scope.kind === "commit" ? options?.commits : options?.branches;
+      if (!scope.ref || !list?.some((item) => item.ref === scope.ref))
+        throw Error("Selected revision is unavailable");
+      if (scope.kind === "commit") {
+        targetRef = scope.ref;
+        head = (
+          await git(
+            root,
+            ["rev-list", "--parents", "-n", "1", scope.ref],
+            context.signal,
+          )
+        )
+          .trim()
+          .split(" ")[1];
+        if (!head) comparison = ["diff-tree", "--root", "--no-commit-id", "-r"];
+      } else {
+        if (!head) throw Error("Create a commit before comparing branches");
+        targetRef = head;
+        head = (
+          await git(root, ["merge-base", "HEAD", scope.ref], context.signal)
+        ).trim();
+      }
+    }
+    const revisions =
+      comparison[0] === "diff-tree"
+        ? [targetRef!]
+        : [
+            ...(head && head !== "INDEX" ? [head] : []),
+            ...(targetRef && targetRef !== "INDEX" ? [targetRef] : []),
+          ];
+    const command = (format: string) => [
+      ...comparison,
+      format,
+      "-z",
+      "--no-renames",
+      ...revisions,
+      "--",
+    ];
+    const [names, numbers, statusOutput] = await Promise.all([
+      git(root, command("--name-only"), context.signal),
+      git(root, command("--numstat"), context.signal),
+      git(root, command("--name-status"), context.signal),
+    ]);
+    const untracked = !targetRef
       ? await git(
           root,
-          ["diff", "--numstat", "-z", "--no-renames", head, "--"],
+          ["ls-files", "-z", "--others", "--exclude-standard"],
           context.signal,
         )
       : "";
+    const paths = [
+        ...new Set(
+          [...names.split("\0"), ...untracked.split("\0")].filter(Boolean),
+        ),
+      ],
+      files: ChangedFile[] = [];
     const stats = new Map(
       numbers
         .split("\0")
@@ -297,21 +382,13 @@ export class WorkspaceChangeReview {
           return [path.join("\t"), { added, removed }] as const;
         }),
     );
-    const statuses = head
-      ? (
-          await git(
-            root,
-            ["diff", "--name-status", "-z", "--no-renames", head, "--"],
-            context.signal,
-          )
-        ).split("\0")
-      : [];
+    const statuses = statusOutput.split("\0");
     const kinds = new Map<string, string>();
     for (let i = 0; i < statuses.length - 1; i += 2)
       kinds.set(statuses[i + 1]!, statuses[i]!);
     for (const path of paths.slice(0, 2000)) {
       const stat = stats.get(path);
-      if (stat)
+      if (stat && (head || targetRef))
         files.push({
           path,
           status:
@@ -339,6 +416,7 @@ export class WorkspaceChangeReview {
       runId: "",
       files,
       ...(head ? { baseHead: head } : {}),
+      ...(targetRef ? { targetRef } : {}),
       added: files.reduce((sum, file) => sum + file.added, 0),
       removed: files.reduce((sum, file) => sum + file.removed, 0),
       ...(paths.length > 2000 ? { incomplete: true } : {}),
@@ -352,7 +430,19 @@ export class WorkspaceChangeReview {
     return changed(
       path,
       await headFile(root, review.baseHead, path, context.signal),
-      await workingFile(root, path),
+      review.targetRef
+        ? await headFile(root, review.targetRef, path, context.signal)
+        : await workingFile(root, path),
     );
+  }
+  async latest(context: ToolContext): Promise<ChangeReview | undefined> {
+    const index = await readFile(
+      join(dirname(this.path(context.sessionId, "")), "latest.json"),
+      "utf8",
+    ).then(
+      (value) => JSON.parse(value) as { runId: string },
+      () => undefined,
+    );
+    return index ? this.load(context, index.runId) : undefined;
   }
 }

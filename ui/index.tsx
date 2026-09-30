@@ -13,7 +13,7 @@ import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 import { markdown } from "@codemirror/lang-markdown";
 import { python } from "@codemirror/lang-python";
-import { MergeView, unifiedMergeView } from "@codemirror/merge";
+import { MergeView, unifiedMergeView, diff } from "@codemirror/merge";
 import {
   ChevronLeft,
   ChevronRight,
@@ -24,6 +24,13 @@ import {
   RefreshCw,
   Search,
   SquareArrowOutUpRight,
+  ChevronDown,
+  MoreHorizontal,
+  FileText,
+  WholeWord,
+  EyeOff,
+  Copy,
+  Image,
 } from "lucide-react";
 import { FileNavigationTree, FileTypeIcon } from "@modera/ui/files";
 import { frontend, usePluginSnapshot } from "@modera/plugin-sdk/react";
@@ -31,6 +38,13 @@ import type { RunChangedFile } from "@modera/plugin-sdk";
 
 type FileChange = RunChangedFile & { before?: string; after?: string };
 type Data = {
+  scope?: { kind: string; ref?: string };
+  git?: {
+    commits: { ref: string; label: string }[];
+    branches: { ref: string; label: string }[];
+  };
+  overview?: FileChange[];
+  patch?: string;
   mode: "turn" | "workspace";
   files: RunChangedFile[];
   selected?: FileChange;
@@ -57,10 +71,16 @@ function Diff({
   file,
   split,
   dark,
+  words,
+  full,
+  whitespace,
 }: {
   file: FileChange;
   split: boolean;
   dark: boolean;
+  words: boolean;
+  full: boolean;
+  whitespace: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -99,10 +119,23 @@ function Diff({
       ),
     ];
     const common = {
-      highlightChanges: true,
+      highlightChanges: words,
       gutter: true,
-      collapseUnchanged: { margin: 3, minSize: 6 },
-      diffConfig: { scanLimit: 2000, timeout: 1000 },
+      ...(full ? {} : { collapseUnchanged: { margin: 3, minSize: 6 } }),
+      diffConfig: {
+        scanLimit: 2000,
+        timeout: 1000,
+        ...(whitespace
+          ? {
+              override: (a: string, b: string) =>
+                diff(a, b, { scanLimit: 2000, timeout: 1000 }).filter(
+                  (c) =>
+                    a.slice(c.fromA, c.toA).replace(/\s/g, "") !==
+                    b.slice(c.fromB, c.toB).replace(/\s/g, ""),
+                ),
+            }
+          : {}),
+      },
     };
     const view = split
       ? new MergeView({
@@ -124,7 +157,17 @@ function Diff({
           ],
         });
     return () => view.destroy();
-  }, [file.path, file.before, file.after, file.unavailable, split, dark]);
+  }, [
+    file.path,
+    file.before,
+    file.after,
+    file.unavailable,
+    split,
+    dark,
+    words,
+    full,
+    whitespace,
+  ]);
   return <div ref={host} className="review-diff" aria-label="File diff" />;
 }
 function App() {
@@ -140,6 +183,12 @@ function App() {
     [tree, setTree] = useState<boolean>(),
     [mode, setMode] = useState<"split" | "unified">();
   const root = useRef<HTMLDivElement>(null);
+  const [words, setWords] = useState(true),
+    [full, setFull] = useState(false),
+    [whitespace, setWhitespace] = useState(false),
+    [preview, setPreview] = useState(false);
+  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const menu = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     setLocal(undefined);
   }, [snapshot?.view]);
@@ -168,6 +217,21 @@ function App() {
     index = files.findIndex((item) => item.path === file?.path);
   const split = mode ? mode === "split" : !narrow,
     showTree = tree ?? !narrow;
+  const scopeLabel = (
+    {
+      turn: t("上一轮", "Last turn"),
+      uncommitted: t("未提交", "Uncommitted"),
+      unstaged: t("未暂存", "Unstaged"),
+      staged: t("已暂存", "Staged"),
+      commit: t("已提交", "Commit"),
+      branch: t("分支比较", "Branch comparison"),
+    } as Record<string, string>
+  )[data?.scope?.kind ?? "turn"];
+  const scope = (kind: string, ref?: string) => {
+    setClosed({});
+    void act("scope", JSON.stringify({ kind, ref }));
+  };
+  const displayed = data?.overview ?? (file ? [file] : []);
   const unavailable = (reason: string) =>
     ({
       binary: t(
@@ -198,11 +262,68 @@ function App() {
       <header className="review-toolbar">
         <div className="review-heading">
           <FileDiff />
-          <strong>
-            {data?.mode === "turn"
-              ? t("本轮变更", "Turn changes")
-              : t("工作区变更", "Working tree changes")}
-          </strong>
+          {data?.git ? (
+            <details className="review-menu">
+              <summary>
+                {scopeLabel}
+                <ChevronDown />
+              </summary>
+              <div className="review-menu-panel">
+                {["turn", "uncommitted", "unstaged", "staged"].map((kind) => (
+                  <button
+                    key={kind}
+                    onClick={(event) => {
+                      event.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                      scope(kind);
+                    }}
+                  >
+                    {
+                      (
+                        {
+                          turn: t("上一轮", "Last turn"),
+                          uncommitted: t("未提交", "Uncommitted"),
+                          unstaged: t("未暂存", "Unstaged"),
+                          staged: t("已暂存", "Staged"),
+                        } as Record<string, string>
+                      )[kind]
+                    }
+                    {data.scope?.kind === kind ? " ✓" : ""}
+                  </button>
+                ))}
+                <details>
+                  <summary>{t("已提交", "Commits")}</summary>
+                  {data.git.commits.map((item) => (
+                    <button
+                      key={item.ref}
+                      onClick={() => scope("commit", item.ref)}
+                      title={item.ref}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </details>
+                <details>
+                  <summary>{t("分支", "Branches")}</summary>
+                  {data.git.branches.map((item) => (
+                    <button
+                      key={item.ref}
+                      onClick={() => scope("branch", item.ref)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </details>
+              </div>
+            </details>
+          ) : (
+            <strong>
+              {data?.mode === "turn"
+                ? t("本轮变更", "Turn changes")
+                : t("工作区变更", "Working tree changes")}
+            </strong>
+          )}
           <span className="review-total">
             <span className="added">+{data?.added ?? 0}</span>
             <span className="removed">−{data?.removed ?? 0}</span>
@@ -212,6 +333,86 @@ function App() {
           </small>
         </div>
         <div className="review-tools">
+          <details ref={menu} className="review-menu">
+            <summary title={t("查看选项", "View options")}>
+              <MoreHorizontal />
+            </summary>
+            <div className="review-menu-panel">
+              <button onClick={() => setFull(!full)}>
+                <FileText />
+                {t("加载完整文件", "Full file context")}
+                {full && " ✓"}
+              </button>
+              <button onClick={() => setWords(!words)}>
+                <WholeWord />
+                {t("词级差异", "Word-level differences")}
+                {words && " ✓"}
+              </button>
+              <button onClick={() => setWhitespace(!whitespace)}>
+                <EyeOff />
+                {t("忽略空白差异", "Ignore whitespace changes")}
+                {whitespace && " ✓"}
+              </button>
+              <button
+                disabled={!file?.path.match(/\.html?$/i)}
+                onClick={() => {
+                  setPreview(!preview);
+                  menu.current?.removeAttribute("open");
+                }}
+              >
+                <Image />
+                {t("HTML 渲染预览", "HTML preview")}
+                {preview && " ✓"}
+              </button>
+              {data?.overview && (
+                <button
+                  onClick={() =>
+                    setClosed(
+                      Object.fromEntries(
+                        displayed.map((item) => [
+                          item.path,
+                          !closed[item.path],
+                        ]),
+                      ),
+                    )
+                  }
+                >
+                  {t("展开 / 收起文件", "Expand / collapse files")}
+                </button>
+              )}
+              {data?.git && (
+                <button
+                  disabled={!file || !!file.unavailable || busy}
+                  onClick={async () => {
+                    try {
+                      const result = await frontend().action("patch");
+                      const patch = (result.view.data as Data).patch;
+                      if (!patch) throw Error("No patch available");
+                      let marker = "MODERA_PATCH";
+                      while (patch.includes(marker)) marker += "_";
+                      await navigator.clipboard.writeText(
+                        `git apply <<'${marker}'\n${patch}\n${marker}`,
+                      );
+                      setNotice(
+                        t(
+                          "已复制当前文件的 git apply 命令",
+                          "Copied git apply command for the current file",
+                        ),
+                      );
+                    } catch (cause) {
+                      setNotice(String(cause));
+                    }
+                  }}
+                >
+                  <Copy />
+                  {t(
+                    "复制 git apply 命令（当前文件）",
+                    "Copy git apply command (current file)",
+                  )}
+                </button>
+              )}
+            </div>
+          </details>
           <button
             title={t("单列差异", "Unified diff")}
             aria-pressed={!split}
@@ -269,9 +470,33 @@ function App() {
               <p>{t("没有文件变更", "No changed files")}</p>
             </div>
           ) : (
-            file && (
-              <>
+            displayed.map((file) => (
+              <section
+                key={file.path}
+                className="review-section"
+                data-file={file.path}
+              >
                 <header className="review-file-heading">
+                  {data?.overview && (
+                    <button
+                      title={t("展开 / 收起", "Expand / collapse")}
+                      aria-expanded={!closed[file.path]}
+                      onClick={() =>
+                        setClosed({
+                          ...closed,
+                          [file.path]: !closed[file.path],
+                        })
+                      }
+                    >
+                      <ChevronDown
+                        style={{
+                          transform: closed[file.path]
+                            ? "rotate(-90deg)"
+                            : undefined,
+                        }}
+                      />
+                    </button>
+                  )}
                   <FileTypeIcon path={file.path} />
                   <span title={file.path}>{file.path}</span>
                   <span className="review-status">
@@ -298,29 +523,43 @@ function App() {
                     </button>
                   )}
                 </header>
-                <div className="review-columns">
-                  {split ? (
-                    <>
-                      <span>{t("修改前", "Before")}</span>
-                      <span>{t("修改后", "After")}</span>
-                    </>
-                  ) : (
-                    <span>{t("修改前后差异", "Changes")}</span>
-                  )}
-                </div>
-                {file.unavailable && file.unavailable !== "complex" ? (
-                  <p className="review-empty">
-                    {unavailable(file.unavailable)}
-                  </p>
-                ) : (
-                  <Diff
-                    file={file}
-                    split={split}
-                    dark={snapshot.theme?.mode === "dark"}
-                  />
+                {!closed[file.path] && (
+                  <>
+                    <div className="review-columns">
+                      {split ? (
+                        <>
+                          <span>{t("修改前", "Before")}</span>
+                          <span>{t("修改后", "After")}</span>
+                        </>
+                      ) : (
+                        <span>{t("修改前后差异", "Changes")}</span>
+                      )}
+                    </div>
+                    {file.unavailable && file.unavailable !== "complex" ? (
+                      <p className="review-empty">
+                        {unavailable(file.unavailable)}
+                      </p>
+                    ) : preview && /\.html?$/i.test(file.path) ? (
+                      <iframe
+                        className="review-preview"
+                        sandbox=""
+                        title={file.path}
+                        srcDoc={`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">${file.after ?? ""}`}
+                      />
+                    ) : (
+                      <Diff
+                        file={file}
+                        split={split}
+                        dark={snapshot.theme?.mode === "dark"}
+                        words={words}
+                        full={full}
+                        whitespace={whitespace}
+                      />
+                    )}
+                  </>
                 )}
-              </>
-            )
+              </section>
+            ))
           )}
           {!!files.length && (
             <footer className="review-pagination">
@@ -362,6 +601,16 @@ function App() {
               selected={file?.path}
               label={t("变更文件", "Changed files")}
               onSelect={(path) => {
+                setClosed((previous) => ({ ...previous, [path]: false }));
+                requestAnimationFrame(() =>
+                  Array.from(
+                    root.current?.querySelectorAll<HTMLElement>(
+                      ".review-section",
+                    ) ?? [],
+                  )
+                    .find((element) => element.dataset.file === path)
+                    ?.scrollIntoView({ block: "start" }),
+                );
                 if (!busy) void act("file", path);
               }}
             />

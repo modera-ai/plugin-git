@@ -4,10 +4,16 @@ import type {
   PluginUiRequest,
 } from "@modera/plugin-sdk";
 import type { ChangeReview, WorkspaceChangeReview } from "./run-changes";
+import { parseScope, reviewOptions, type ReviewScope } from "./review-scopes";
+import { createTwoFilesPatch } from "diff";
 
-export function reviewUi(changes: WorkspaceChangeReview): PluginUiContribution[] {
+export function reviewUi(
+  changes: WorkspaceChangeReview,
+): PluginUiContribution[] {
   const selected = new Map<string, string>();
   const current = new Map<string, ChangeReview>();
+  const scopes = new Map<string, ReviewScope>();
+  const patchRequests = new Set<string>();
   const key = (request: PluginUiRequest) =>
     JSON.stringify([request.sessionId, request.resource ?? ""]);
   return [
@@ -63,11 +69,17 @@ export function reviewUi(changes: WorkspaceChangeReview): PluginUiContribution[]
         locales: { "zh-CN": { title: "变更审查" } },
       },
       requiredPermissions: ["workspace.read", "process.spawn"],
-      actions: ["refresh", "file"],
+      actions: ["refresh", "file", "scope", "patch"],
       async act(action, _context, request) {
         if (action.id === "refresh") current.delete(key(request));
         if (action.id === "file" && action.value)
           selected.set(key(request), action.value);
+        if (action.id === "scope") {
+          scopes.set(key(request), parseScope(action.value));
+          current.delete(key(request));
+          selected.delete(key(request));
+        }
+        if (action.id === "patch") patchRequests.add(key(request));
       },
       async render(request, context) {
         const zh = request.locale.startsWith("zh");
@@ -82,27 +94,85 @@ export function reviewUi(changes: WorkspaceChangeReview): PluginUiContribution[]
             ? "工作区变更"
             : "Working tree changes";
         try {
-          let review = resource.runId
-            ? await changes.load(context, resource.runId)
-            : current.get(key(request));
+          const options = await reviewOptions(context);
+          const scope: ReviewScope = scopes.get(key(request)) ?? {
+            kind: resource.runId || !options ? "turn" : "uncommitted",
+          };
+          let review =
+            scope.kind === "turn"
+              ? resource.runId
+                ? await changes.load(context, resource.runId)
+                : await changes.latest(context)
+              : current.get(key(request));
           if (!review) {
-            review = await changes.current(context);
+            review =
+              scope.kind === "turn"
+                ? {
+                    projectId: context.projectId,
+                    sessionId: context.sessionId,
+                    runId: "",
+                    files: [],
+                    added: 0,
+                    removed: 0,
+                  }
+                : await changes.current(context, scope);
             current.set(key(request), review);
           }
-          const path =
+          const requestedPath =
             selected.get(key(request)) ??
             resource.path ??
             review.files[0]?.path;
+          const path = review.files.some((item) => item.path === requestedPath)
+            ? requestedPath
+            : review.files[0]?.path;
           const file =
-            path && !resource.runId
+            path && !review.runId
               ? await changes.currentFile(context, review, path)
               : review.files.find((item) => item.path === path);
+          let overview: ChangeReview["files"] | undefined;
+          if (review.files.length <= 8) {
+            const contents = review.runId
+              ? review.files
+              : (
+                  await Promise.all(
+                    review.files.map((item) =>
+                      changes.currentFile(context, review!, item.path),
+                    ),
+                  )
+                ).filter((item): item is NonNullable<typeof item> => !!item);
+            if (
+              contents.reduce(
+                (sum, item) =>
+                  sum +
+                  Buffer.byteLength(item.before ?? "") +
+                  Buffer.byteLength(item.after ?? ""),
+                0,
+              ) <=
+              2 * 1024 * 1024
+            )
+              overview = contents;
+          }
+          let patch: string | undefined;
+          if (patchRequests.delete(key(request)) && file && !file.unavailable) {
+            patch = createTwoFilesPatch(
+              file.status === "added" ? "/dev/null" : `a/${file.path}`,
+              file.status === "deleted" ? "/dev/null" : `b/${file.path}`,
+              file.before ?? "",
+              file.after ?? "",
+            );
+            if (Buffer.byteLength(patch) > 1024 * 1024)
+              throw Error("Patch is too large to copy");
+          }
           return {
             title: review.runId ? (zh ? "本轮变更" : "Turn changes") : title,
             children: [],
             data: {
               mode: review.runId ? "turn" : "workspace",
               runId: review.runId,
+              scope,
+              ...(options ? { git: options } : {}),
+              ...(overview ? { overview } : {}),
+              ...(patch ? { patch } : {}),
               files: review.files.map(
                 ({ before: _before, after: _after, ...item }) => item,
               ),
