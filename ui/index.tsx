@@ -38,6 +38,7 @@ import {
 import { FileNavigationTree, FileTypeIcon } from "@modera/ui/files";
 import { frontend, usePluginSnapshot } from "@modera/plugin-sdk/react";
 import type { RunChangedFile } from "@modera/plugin-sdk";
+import { RenderedPreview, supportsPreview } from "./RenderedPreview";
 
 type FileChange = RunChangedFile & { before?: string; after?: string };
 type Data = {
@@ -416,14 +417,20 @@ function App() {
                 {whitespace && <Check className="review-check" />}
               </button>
               <button
-                disabled={!file?.path.match(/\.html?$/i)}
+                disabled={
+                  !displayed.some(
+                    (item) =>
+                      supportsPreview(item.path) &&
+                      (!item.unavailable || item.unavailable === "complex"),
+                  )
+                }
                 onClick={() => {
                   setPreview(!preview);
                   menu.current?.removeAttribute("open");
                 }}
               >
                 <Image />
-                {t("HTML 渲染预览", "HTML preview")}
+                {t("渲染预览", "Rendered preview")}
                 {preview && <Check className="review-check" />}
               </button>
               {data?.git && (
@@ -643,20 +650,21 @@ function App() {
                           <span>{t("修改后", "After")}</span>
                         </>
                       ) : (
-                        <span>{t("修改前后差异", "Changes")}</span>
+                        <span>
+                          {preview && supportsPreview(file.path)
+                            ? file.status === "deleted"
+                              ? t("修改前预览", "Before preview")
+                              : t("修改后预览", "After preview")
+                            : t("修改前后差异", "Changes")}
+                        </span>
                       )}
                     </div>
                     {file.unavailable && file.unavailable !== "complex" ? (
                       <p className="review-empty">
                         {unavailable(file.unavailable)}
                       </p>
-                    ) : preview && /\.html?$/i.test(file.path) ? (
-                      <iframe
-                        className="review-preview"
-                        sandbox=""
-                        title={file.path}
-                        srcDoc={`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">${file.after ?? ""}`}
-                      />
+                    ) : preview && supportsPreview(file.path) ? (
+                      <RenderedPreview file={file} split={split} zh={zh} />
                     ) : (
                       <Diff
                         file={file}
