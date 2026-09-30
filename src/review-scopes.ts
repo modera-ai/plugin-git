@@ -5,7 +5,8 @@ export type ReviewScope = {
   ref?: string;
 };
 export interface GitReviewOptions {
-  commits: { ref: string; label: string }[];
+  commits: { ref: string; label: string; date?: string }[];
+  currentBranch: string;
   branches: { ref: string; label: string }[];
 }
 export async function reviewOptions(
@@ -13,8 +14,8 @@ export async function reviewOptions(
 ): Promise<GitReviewOptions | undefined> {
   const root = await repository(context).catch(() => undefined);
   if (!root) return undefined;
-  const [log, refs] = await Promise.all([
-    git(root, ["log", "-20", "--format=%H%x09%h %s"], context.signal).catch(
+  const [log, refs, currentBranch] = await Promise.all([
+    git(root, ["log", "-20", "--format=%H%x09%s%x09%aI"], context.signal).catch(
       () => "",
     ),
     git(
@@ -24,8 +25,12 @@ export async function reviewOptions(
         "--count=100",
         "--format=%(refname)%09%(refname:short)",
         "refs/heads/",
+        "refs/remotes/",
       ],
       context.signal,
+    ),
+    git(root, ["symbolic-ref", "--short", "HEAD"], context.signal).catch(
+      () => "HEAD",
     ),
   ]);
   const parse = (value: string) =>
@@ -37,7 +42,18 @@ export async function reviewOptions(
         const [ref, ...label] = line.split("\t");
         return { ref: ref!, label: label.join("\t") };
       });
-  return { commits: parse(log), branches: parse(refs) };
+  return {
+    commits: log
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [ref, label, date] = line.split("\t");
+        return { ref: ref!, label: label!, date };
+      }),
+    branches: parse(refs).filter((item) => !item.label.endsWith("/HEAD")),
+    currentBranch: currentBranch.trim(),
+  };
 }
 export function parseScope(value: string | undefined): ReviewScope {
   const input = JSON.parse(value ?? "{}") as ReviewScope;

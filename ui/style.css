@@ -174,12 +174,72 @@ button svg {
   z-index: 20;
   width: 280px;
   max-height: 420px;
-  overflow: auto;
+  overflow: visible;
   padding: 6px;
   border: 1px solid var(--review-line);
   border-radius: 12px;
   background: var(--review-card);
   box-shadow: 0 8px 28px #0003;
+}
+.review-check {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+}
+.review-menu-panel .review-submenu {
+  position: relative;
+}
+.review-submenu > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+}
+.review-commits {
+  position: absolute;
+  left: calc(100% + 7px);
+  top: 0;
+  width: min(560px, calc(100vw - 320px));
+  max-height: 380px;
+  overflow: auto;
+  border: 1px solid var(--review-line);
+  border-radius: 12px;
+  background: var(--review-card);
+  padding: 6px;
+  box-shadow: 0 8px 28px #0003;
+}
+.review-commits button {
+  white-space: nowrap;
+}
+.review-commits small {
+  color: var(--review-muted);
+  margin-left: auto;
+  flex: none;
+}
+.review-branch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--review-line);
+}
+.review-branch-row .review-menu-panel {
+  max-height: 350px;
+  overflow: auto;
+}
+.review-app .review-diff .review-whole-line .cm-changedText {
+  background: transparent !important;
+}
+@media (max-width: 650px) {
+  .review-commits {
+    position: static;
+    width: 100%;
+    max-height: 250px;
+    box-shadow: none;
+  }
+  .review-menu-panel {
+    width: min(280px, calc(100vw - 24px));
+  }
 }
 .review-tools .review-menu-panel {
   left: auto;
@@ -309,7 +369,10 @@ button svg {
   background: rgb(153 49 39 / 28%);
 }
 .review-app[data-theme="dark"] .review-diff .cm-merge-b .cm-changedLine,
-.review-app[data-theme="dark"] .review-diff .cm-editor:not(.cm-merge-a):not(.cm-merge-b) .cm-changedLine,
+.review-app[data-theme="dark"]
+  .review-diff
+  .cm-editor:not(.cm-merge-a):not(.cm-merge-b)
+  .cm-changedLine,
 .review-app[data-theme="dark"] .review-diff .cm-insertedLine {
   background: rgb(35 112 64 / 28%);
 }

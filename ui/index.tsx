@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { EditorState, type Extension } from "@codemirror/state";
-import { EditorView, lineNumbers } from "@codemirror/view";
+import { EditorView, lineNumbers, Decoration } from "@codemirror/view";
 import {
   defaultHighlightStyle,
   syntaxHighlighting,
@@ -31,6 +31,9 @@ import {
   EyeOff,
   Copy,
   Image,
+  Check,
+  ListCollapse,
+  GitBranch,
 } from "lucide-react";
 import { FileNavigationTree, FileTypeIcon } from "@modera/ui/files";
 import { frontend, usePluginSnapshot } from "@modera/plugin-sdk/react";
@@ -40,8 +43,9 @@ type FileChange = RunChangedFile & { before?: string; after?: string };
 type Data = {
   scope?: { kind: string; ref?: string };
   git?: {
-    commits: { ref: string; label: string }[];
+    commits: { ref: string; label: string; date?: string }[];
     branches: { ref: string; label: string }[];
+    currentBranch: string;
   };
   overview?: FileChange[];
   patch?: string;
@@ -119,7 +123,8 @@ function Diff({
       ),
     ];
     const common = {
-      highlightChanges: words,
+      highlightChanges:
+        words && file.status !== "added" && file.status !== "deleted",
       gutter: true,
       ...(full ? {} : { collapseUnchanged: { margin: 3, minSize: 6 } }),
       diffConfig: {
@@ -137,11 +142,42 @@ function Diff({
           : {}),
       },
     };
+    const changes = diff(file.before ?? "", file.after ?? "", {
+      scanLimit: 2000,
+      timeout: 1000,
+    });
+    const wholeLines = (before: boolean): Extension =>
+      EditorView.decorations.of((view) => {
+        const ranges = [];
+        for (const change of changes) {
+          const start = before ? change.fromA : change.fromB,
+            end = before ? change.toA : change.toB;
+          for (let pos = start; pos < end;) {
+            const line = view.state.doc.lineAt(pos);
+            if (line.from >= start && line.to <= end && line.length)
+              ranges.push(
+                Decoration.line({ class: "review-whole-line" }).range(
+                  line.from,
+                ),
+              );
+            const next = line.to + 1;
+            if (next <= pos) break;
+            pos = next;
+          }
+        }
+        return Decoration.set(ranges, true);
+      });
     const view = split
       ? new MergeView({
           parent: host.current,
-          a: { doc: file.before ?? "", extensions },
-          b: { doc: file.after ?? "", extensions },
+          a: {
+            doc: file.before ?? "",
+            extensions: [...extensions, wholeLines(true)],
+          },
+          b: {
+            doc: file.after ?? "",
+            extensions: [...extensions, wholeLines(false)],
+          },
           ...common,
         })
       : new EditorView({
@@ -149,6 +185,7 @@ function Diff({
           doc: file.after ?? "",
           extensions: [
             ...extensions,
+            wholeLines(false),
             unifiedMergeView({
               original: file.before ?? "",
               mergeControls: false,
@@ -189,6 +226,8 @@ function App() {
     [preview, setPreview] = useState(false);
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const menu = useRef<HTMLDetailsElement>(null);
+  const scopeMenu = useRef<HTMLDetailsElement>(null);
+  const [branchQuery, setBranchQuery] = useState("");
   useEffect(() => {
     setLocal(undefined);
   }, [snapshot?.view]);
@@ -228,6 +267,7 @@ function App() {
     } as Record<string, string>
   )[data?.scope?.kind ?? "turn"];
   const scope = (kind: string, ref?: string) => {
+    scopeMenu.current?.removeAttribute("open");
     setClosed({});
     void act("scope", JSON.stringify({ kind, ref }));
   };
@@ -263,7 +303,7 @@ function App() {
         <div className="review-heading">
           <FileDiff />
           {data?.git ? (
-            <details className="review-menu">
+            <details ref={scopeMenu} className="review-menu">
               <summary>
                 {scopeLabel}
                 <ChevronDown />
@@ -289,32 +329,54 @@ function App() {
                         } as Record<string, string>
                       )[kind]
                     }
-                    {data.scope?.kind === kind ? " ✓" : ""}
+                    {data.scope?.kind === kind && (
+                      <Check className="review-check" />
+                    )}
                   </button>
                 ))}
-                <details>
-                  <summary>{t("已提交", "Commits")}</summary>
-                  {data.git.commits.map((item) => (
-                    <button
-                      key={item.ref}
-                      onClick={() => scope("commit", item.ref)}
-                      title={item.ref}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
+                <details className="review-submenu">
+                  <summary>
+                    {t("已提交", "Commits")}
+                    <ChevronRight />
+                  </summary>
+                  <div className="review-commits">
+                    {data.git.commits.map((item) => (
+                      <button
+                        key={item.ref}
+                        onClick={() => scope("commit", item.ref)}
+                        title={item.ref}
+                      >
+                        {item.label}
+                        <small>
+                          {item.date
+                            ? new Intl.DateTimeFormat(zh ? "zh-CN" : "en", {
+                                month: "short",
+                                day: "numeric",
+                              }).format(new Date(item.date))
+                            : ""}
+                        </small>
+                        {data.scope?.ref === item.ref && (
+                          <Check className="review-check" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </details>
-                <details>
-                  <summary>{t("分支", "Branches")}</summary>
-                  {data.git.branches.map((item) => (
-                    <button
-                      key={item.ref}
-                      onClick={() => scope("branch", item.ref)}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </details>
+                <button
+                  onClick={() =>
+                    scope(
+                      "branch",
+                      data.git!.branches.find(
+                        (item) => item.label !== data.git!.currentBranch,
+                      )?.ref ?? data.git!.branches[0]?.ref,
+                    )
+                  }
+                >
+                  {t("分支", "Branches")}
+                  {data.scope?.kind === "branch" && (
+                    <Check className="review-check" />
+                  )}
+                </button>
               </div>
             </details>
           ) : (
@@ -341,17 +403,17 @@ function App() {
               <button onClick={() => setFull(!full)}>
                 <FileText />
                 {t("加载完整文件", "Full file context")}
-                {full && " ✓"}
+                {full && <Check className="review-check" />}
               </button>
               <button onClick={() => setWords(!words)}>
                 <WholeWord />
                 {t("词级差异", "Word-level differences")}
-                {words && " ✓"}
+                {words && <Check className="review-check" />}
               </button>
               <button onClick={() => setWhitespace(!whitespace)}>
                 <EyeOff />
                 {t("忽略空白差异", "Ignore whitespace changes")}
-                {whitespace && " ✓"}
+                {whitespace && <Check className="review-check" />}
               </button>
               <button
                 disabled={!file?.path.match(/\.html?$/i)}
@@ -362,24 +424,8 @@ function App() {
               >
                 <Image />
                 {t("HTML 渲染预览", "HTML preview")}
-                {preview && " ✓"}
+                {preview && <Check className="review-check" />}
               </button>
-              {data?.overview && (
-                <button
-                  onClick={() =>
-                    setClosed(
-                      Object.fromEntries(
-                        displayed.map((item) => [
-                          item.path,
-                          !closed[item.path],
-                        ]),
-                      ),
-                    )
-                  }
-                >
-                  {t("展开 / 收起文件", "Expand / collapse files")}
-                </button>
-              )}
               {data?.git && (
                 <button
                   disabled={!file || !!file.unavailable || busy}
@@ -405,28 +451,41 @@ function App() {
                   }}
                 >
                   <Copy />
-                  {t(
-                    "复制 git apply 命令（当前文件）",
-                    "Copy git apply command (current file)",
-                  )}
+                  {t("复制 git apply 命令", "Copy git apply command")}
                 </button>
               )}
             </div>
           </details>
           <button
-            title={t("单列差异", "Unified diff")}
-            aria-pressed={!split}
-            onClick={() => setMode("unified")}
-          >
-            <List />
-          </button>
-          <button
-            title={t("左右对照", "Side by side")}
+            title={
+              split
+                ? t("切换为单列差异", "Switch to unified diff")
+                : t("左右对照", "Side by side")
+            }
             aria-pressed={split}
-            onClick={() => setMode("split")}
+            onClick={() => setMode(split ? "unified" : "split")}
           >
-            <Columns2 />
+            {split ? <Columns2 /> : <List />}
           </button>
+          {data?.overview && (
+            <button
+              title={
+                displayed.every((item) => closed[item.path])
+                  ? t("展开全部差异", "Expand all diffs")
+                  : t("收起全部差异", "Collapse all diffs")
+              }
+              onClick={() => {
+                const collapse = !displayed.every((item) => closed[item.path]);
+                setClosed(
+                  Object.fromEntries(
+                    displayed.map((item) => [item.path, collapse]),
+                  ),
+                );
+              }}
+            >
+              <ListCollapse />
+            </button>
+          )}
           <button
             title={t("文件导航", "File navigation")}
             aria-pressed={showTree}
@@ -445,6 +504,58 @@ function App() {
           )}
         </div>
       </header>
+      {data?.git && data.scope?.kind === "branch" && (
+        <div className="review-branch-row">
+          <span>{data.git.currentBranch}</span>
+          <span>→</span>
+          <details className="review-menu">
+            <summary>
+              {data.git.branches.find((item) => item.ref === data.scope?.ref)
+                ?.label ?? t("选择分支", "Choose branch")}
+              <ChevronDown />
+            </summary>
+            <div className="review-menu-panel">
+              <label className="review-search">
+                <Search />
+                <input
+                  placeholder={t("搜索分支", "Search branches")}
+                  value={branchQuery}
+                  onChange={(event) => setBranchQuery(event.target.value)}
+                />
+              </label>
+              {data.git.branches
+                .filter((item) =>
+                  item.label.toLowerCase().includes(branchQuery.toLowerCase()),
+                )
+                .map((item) => (
+                  <button
+                    key={item.ref}
+                    onClick={(event) => {
+                      event.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                      scope("branch", item.ref);
+                    }}
+                  >
+                    <GitBranch />
+                    {item.label}
+                    {item.ref === data.scope?.ref && (
+                      <Check className="review-check" />
+                    )}
+                  </button>
+                ))}
+            </div>
+          </details>
+        </div>
+      )}
+      {!!files.length && !data?.overview && (
+        <p className="review-notice">
+          {t(
+            "此差异较大，每次仅显示一个文件",
+            "This diff is large; showing one file at a time",
+          )}
+        </p>
+      )}
       {(notice || error || data?.error) && (
         <p role="alert" className="review-notice">
           {notice || error || data?.error}
