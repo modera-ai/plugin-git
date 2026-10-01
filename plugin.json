@@ -1,5 +1,6 @@
 {
   "apiVersion": 1,
+  "activationScope": "scoped",
   "extensions": ["panel", "tool.approval"],
   "id": "modera.git",
   "name": "Change Review",
