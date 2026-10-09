@@ -222,3 +222,24 @@ describe("ordinary workspace review", () => {
     expect(await capture.finish(signal())).toBeUndefined();
   });
 });
+
+it("keeps exact before/after image bytes through Git and historical turn reviews", async () => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aMZkAAAAASUVORK5CYII=", "base64");
+  const next = Buffer.concat([png, Buffer.from("changed")]);
+  await writeFile(join(workspace, "picture.png"), png);
+  git("add", "picture.png"); git("commit", "-qm", "image baseline");
+  const changes = new WorkspaceChangeReview(storage);
+  const capture = (await changes.begin(context()))!;
+  await writeFile(join(workspace, "picture.png"), next);
+  const summary = (await capture.finish(signal()))!;
+  const review = await changes.load(context(), "run");
+  expect(review.files[0]?.beforeImage).toBe(`data:image/png;base64,${png.toString("base64")}`);
+  expect(review.files[0]?.afterImage).toBe(`data:image/png;base64,${next.toString("base64")}`);
+  expect(summary.files[0]).not.toHaveProperty("beforeImage");
+  const current = await changes.current(context());
+  const selected = await changes.currentFile(context(), current, "picture.png");
+  expect(selected?.beforeImage).toBe(review.files[0]?.beforeImage);
+  expect(selected?.afterImage).toBe(review.files[0]?.afterImage);
+  await writeFile(join(workspace, "picture.png"), "later unrelated bytes");
+  expect((await changes.load(context(), "run")).files[0]?.afterImage).toBe(review.files[0]?.afterImage);
+});

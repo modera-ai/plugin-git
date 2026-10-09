@@ -49,7 +49,7 @@ import { frontend, usePluginSnapshot } from "@modera/plugin-sdk/react";
 import type { RunChangedFile } from "@modera/plugin-sdk";
 import { RenderedPreview, supportsPreview } from "./RenderedPreview";
 
-type FileChange = RunChangedFile & { before?: string; after?: string };
+type FileChange = RunChangedFile & { before?: string; after?: string; beforeImage?: string; afterImage?: string };
 const ReviewTheme = createContext<"light" | "dark">("light");
 function ReviewButton({
   title,
@@ -729,7 +729,12 @@ function App() {
                           </span>
                         )}
                       </div>
-                      {file.unavailable && file.unavailable !== "complex" ? (
+                      {file.beforeImage || file.afterImage ? (
+                        <div className={`review-image-preview${split ? " split" : ""}`}>
+                          {(split || file.status === "deleted") && <div>{file.beforeImage ? <img src={file.beforeImage} alt={t("修改前", "Before")} /> : <span>{t("无图片", "No image")}</span>}</div>}
+                          {(split || file.status !== "deleted") && <div>{file.afterImage ? <img src={file.afterImage} alt={t("修改后", "After")} /> : <span>{t("无图片", "No image")}</span>}</div>}
+                        </div>
+                      ) : file.unavailable && file.unavailable !== "complex" ? (
                         <p className="review-empty">
                           {unavailable(file.unavailable)}
                         </p>

@@ -16,16 +16,17 @@ import type {
   RunChangesSummary,
   ToolContext,
 } from "@modera/plugin-sdk";
-import { git, repository, selectedPaths } from "./git-backend";
+import { git, gitBytes, repository, selectedPaths } from "./git-backend";
 import { workspaceFiles } from "./workspace-snapshot";
 import { reviewOptions, type ReviewScope } from "./review-scopes";
 
 const FILE_LIMIT = 1024 * 1024;
+const contentLimit = (path: string) => /\.(png|jpe?g|webp|gif)$/i.test(path) ? 8 * 1024 * 1024 : FILE_LIMIT;
 const TOTAL_LIMIT = 32 * 1024 * 1024;
 const digest = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
-type Content = { hash: string; text?: string; unavailable?: string };
-export type ChangedFile = RunChangedFile & { before?: string; after?: string };
+type Content = { hash: string; text?: string; unavailable?: string; image?: string };
+export type ChangedFile = RunChangedFile & { before?: string; after?: string; beforeImage?: string; afterImage?: string };
 export interface ChangeReview {
   baseHead?: string;
   targetRef?: string;
@@ -39,6 +40,11 @@ export interface ChangeReview {
 }
 function content(buffer: Buffer): Content {
   const hash = digest(buffer);
+  const mime = buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) ? "image/png"
+    : buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255 ? "image/jpeg"
+    : buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP" ? "image/webp"
+    : /^GIF8[79]a$/.test(buffer.toString("ascii", 0, 6)) ? "image/gif" : undefined;
+  if (mime) return { hash, unavailable: "binary", image: `data:${mime};base64,${buffer.toString("base64")}` };
   if (buffer.includes(0)) return { hash, unavailable: "binary" };
   try {
     return {
@@ -65,7 +71,7 @@ async function workingFile(
     return { hash: digest(await readlink(target)), unavailable: "symlink" };
   if (!stat.isFile())
     return { hash: String(stat.mtimeMs), unavailable: "directory" };
-  if (stat.size > FILE_LIMIT)
+  if (stat.size > contentLimit(path))
     return { hash: `${stat.size}:${stat.mtimeMs}`, unavailable: "large" };
   return content(await readFile(target));
 }
@@ -89,21 +95,19 @@ async function headFile(
     const id = item.split("\t")[0]!.split(" ")[1]!;
     if (
       Number((await git(root, ["cat-file", "-s", id], signal)).trim()) >
-      FILE_LIMIT
+      contentLimit(path)
     )
       return { hash: id, unavailable: "large" };
     return content(
-      Buffer.from(await git(root, ["cat-file", "blob", id], signal)),
+      await gitBytes(root, ["cat-file", "blob", id], signal),
     );
   }
   const object = await git(root, ["ls-tree", "-z", head, "--", path], signal);
   if (!object) return null;
   const id = object.split("\t")[0]!.split(" ").at(-1)!;
   const size = Number((await git(root, ["cat-file", "-s", id], signal)).trim());
-  if (size > FILE_LIMIT) return { hash: id, unavailable: "large" };
-  // cat-file returns text through execFile. Binary objects are reported, not rendered.
-  const text = await git(root, ["cat-file", "blob", id], signal);
-  return content(Buffer.from(text));
+  if (size > contentLimit(path)) return { hash: id, unavailable: "large" };
+  return content(await gitBytes(root, ["cat-file", "blob", id], signal));
 }
 async function dirtyPaths(
   root: string,
@@ -155,6 +159,8 @@ function changed(
       0,
     ...(unavailable || !diff ? { unavailable: unavailable ?? "complex" } : {}),
     ...(!unavailable ? { before: left, after: right } : {}),
+    ...(before?.image ? { beforeImage: before.image } : {}),
+    ...(after?.image ? { afterImage: after.image } : {}),
   };
 }
 
@@ -189,7 +195,7 @@ export class WorkspaceChangeReview {
     for (const path of paths.slice(0, 2000)) {
       context.signal.throwIfAborted();
       const file = await workingFile(root, path);
-      bytes += Buffer.byteLength(file?.text ?? "");
+      bytes += Buffer.byteLength(file?.text ?? "") + Buffer.byteLength(file?.image ?? "");
       if (bytes > TOTAL_LIMIT) {
         incomplete = true;
         break;
@@ -220,10 +226,12 @@ export class WorkspaceChangeReview {
           if (!file) continue;
           storedBytes +=
             Buffer.byteLength(file.before ?? "") +
-            Buffer.byteLength(file.after ?? "");
+            Buffer.byteLength(file.after ?? "") + Buffer.byteLength(file.beforeImage ?? "") + Buffer.byteLength(file.afterImage ?? "");
           if (storedBytes > TOTAL_LIMIT) {
             delete file.before;
             delete file.after;
+            delete file.beforeImage;
+            delete file.afterImage;
             files.push({ ...file, unavailable: "budget" });
             incomplete = true;
           } else files.push(file);
@@ -258,7 +266,7 @@ export class WorkspaceChangeReview {
       panelId: "modera.git.panel",
       resource: JSON.stringify({ runId: review.runId }),
       files: review.files.map(
-        ({ before: _before, after: _after, ...file }) => ({
+        ({ before: _before, after: _after, beforeImage: _bi, afterImage: _ai, ...file }) => ({
           ...file,
           resource: JSON.stringify({ runId: review.runId, path: file.path }),
         }),
@@ -406,6 +414,8 @@ export class WorkspaceChangeReview {
         if (file) {
           delete file.before;
           delete file.after;
+            delete file.beforeImage;
+            delete file.afterImage;
           files.push(file);
         }
       }

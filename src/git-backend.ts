@@ -33,6 +33,16 @@ export function git(
   });
 }
 
+export function gitBytes(cwd: string, args: string[], signal: AbortSignal): Promise<Buffer> {
+  signal.throwIfAborted();
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+  return new Promise((accept, reject) => {
+    execFile("git", ["--no-pager", "--literal-pathspecs", "-c", "core.hooksPath=", ...args],
+      { cwd, signal, windowsHide: true, timeout: 30000, maxBuffer: 16 * 1024 * 1024, encoding: "buffer", env: { ...env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" } },
+      (error, stdout, stderr) => error ? reject(new Error(stderr.toString().trim() || error.message)) : accept(stdout));
+  });
+}
+
 export async function repository(context: ToolContext): Promise<string> {
   if (!context.workspacePath)
     throw new Error("A project workspace is required");

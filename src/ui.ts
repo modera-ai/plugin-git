@@ -145,7 +145,7 @@ export function reviewUi(
                 (sum, item) =>
                   sum +
                   Buffer.byteLength(item.before ?? "") +
-                  Buffer.byteLength(item.after ?? ""),
+                  Buffer.byteLength(item.after ?? "") + Buffer.byteLength(item.beforeImage ?? "") + Buffer.byteLength(item.afterImage ?? ""),
                 0,
               ) <=
               2 * 1024 * 1024
@@ -174,7 +174,7 @@ export function reviewUi(
               ...(overview ? { overview } : {}),
               ...(patch ? { patch } : {}),
               files: review.files.map(
-                ({ before: _before, after: _after, ...item }) => item,
+                ({ before: _before, after: _after, beforeImage: _bi, afterImage: _ai, ...item }) => item,
               ),
               added: review.added,
               removed: review.removed,
