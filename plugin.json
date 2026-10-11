@@ -105,5 +105,6 @@
       "name": "变更审查",
       "description": "普通文件夹也支持每轮变更审查；Git 仓库额外支持版本管理。"
     }
-  }
+  },
+  "contributions": ["runChanges"]
 }
