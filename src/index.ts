@@ -1,11 +1,8 @@
 import {
-  declaredTools,
   type PluginModule,
   type ToolContext,
 } from "@modera/plugin-sdk";
-import manifest from "../plugin.json";
 import { reviewUi } from "./ui";
-import { GitChanges } from "./changes";
 import { WorkspaceChangeReview } from "./run-changes";
 
 export type Input = {
@@ -163,25 +160,9 @@ export async function change(input: Input, context: ToolContext) {
 }
 
 export const activate: PluginModule["activate"] = async (host) => {
-  const changes = new GitChanges();
   const runChanges = new WorkspaceChangeReview(host.storagePath);
-  host.signal.addEventListener("abort", () => changes.clear(), { once: true });
   return {
     runChanges,
     ui: reviewUi(runChanges),
-    tools: declaredTools(manifest).map((definition) => ({
-      definition,
-      isAvailable: (context) => !!context.workspacePath,
-      ...(definition.id === "git_change"
-        ? {
-            prepare: (input: unknown, context: ToolContext) =>
-              changes.prepare(input as Input, context),
-          }
-        : {}),
-      execute: (input, context) =>
-        definition.id === "git_inspect"
-          ? inspect(input as Input, context)
-          : changes.execute(input, context),
-    })),
   };
 };

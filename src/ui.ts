@@ -18,47 +18,6 @@ export function reviewUi(
     JSON.stringify([request.sessionId, request.resource ?? ""]);
   return [
     {
-      id: "modera.git.approval",
-      slot: "tool.approval",
-      toolNames: ["git_change"],
-      requiredPermissions: ["workspace.read"],
-      async render(request) {
-        const preview = request.tool?.result
-          ? JSON.parse(request.tool.result)
-          : {};
-        const children: PluginUiNode[] = [
-          {
-            type: "code",
-            text: JSON.stringify(
-              {
-                action: preview.action,
-                paths: preview.paths,
-                message: preview.message,
-                branch: preview.branch,
-              },
-              null,
-              2,
-            ).slice(0, 16000),
-          },
-        ];
-        if (preview.diff)
-          children.push({
-            type: "document",
-            label: "Git diff",
-            text: preview.diff,
-            ...(preview.truncated ? { meta: "已截断 / Truncated" } : {}),
-          });
-        if (preview.note) children.push({ type: "text", text: preview.note });
-        return {
-          title: request.locale.startsWith("zh")
-            ? "确认 Git 变更"
-            : "Review Git change",
-          scroll: true,
-          children,
-        };
-      },
-    },
-    {
       id: "modera.git.panel",
       slot: "panel",
       frontend: "review",
