@@ -23,27 +23,26 @@ import { html } from "@codemirror/lang-html";
 import { markdown } from "@codemirror/lang-markdown";
 import { python } from "@codemirror/lang-python";
 import { MergeView, unifiedMergeView, diff } from "@codemirror/merge";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Columns2,
-  FileDiff,
-  FolderTree,
-  List,
-  RefreshCw,
-  Search,
-  SquareArrowOutUpRight,
-  ChevronDown,
-  MoreHorizontal,
-  FileText,
-  WholeWord,
-  EyeOff,
-  Copy,
-  Image,
-  Check,
-  ListCollapse,
-  GitBranch,
-} from "lucide-react";
+import { CaretLeftIcon as ChevronLeft } from "@phosphor-icons/react/dist/csr/CaretLeft";
+import { CaretRightIcon as ChevronRight } from "@phosphor-icons/react/dist/csr/CaretRight";
+import { ColumnsIcon as Columns2 } from "@phosphor-icons/react/dist/csr/Columns";
+import { FileMinusIcon as FileDiff } from "@phosphor-icons/react/dist/csr/FileMinus";
+import { TreeStructureIcon as FolderTree } from "@phosphor-icons/react/dist/csr/TreeStructure";
+import { ListIcon as List } from "@phosphor-icons/react/dist/csr/List";
+import { ArrowsClockwiseIcon as RefreshCw } from "@phosphor-icons/react/dist/csr/ArrowsClockwise";
+import { MagnifyingGlassIcon as Search } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
+import { ArrowSquareOutIcon as SquareArrowOutUpRight } from "@phosphor-icons/react/dist/csr/ArrowSquareOut";
+import { CaretDownIcon as ChevronDown } from "@phosphor-icons/react/dist/csr/CaretDown";
+import { DotsThreeIcon as MoreHorizontal } from "@phosphor-icons/react/dist/csr/DotsThree";
+import { FileTextIcon as FileText } from "@phosphor-icons/react/dist/csr/FileText";
+import { TextAaIcon as WholeWord } from "@phosphor-icons/react/dist/csr/TextAa";
+import { EyeSlashIcon as EyeOff } from "@phosphor-icons/react/dist/csr/EyeSlash";
+import { CopyIcon as Copy } from "@phosphor-icons/react/dist/csr/Copy";
+import { ImageIcon as Image } from "@phosphor-icons/react/dist/csr/Image";
+import { CheckIcon as Check } from "@phosphor-icons/react/dist/csr/Check";
+import { ListIcon as ListCollapse } from "@phosphor-icons/react/dist/csr/List";
+import { GitBranchIcon as GitBranch } from "@phosphor-icons/react/dist/csr/GitBranch";
+
 import { FileNavigationTree, FileTypeIcon } from "@modera/ui/files";
 import { frontend, usePluginSnapshot } from "@modera/plugin-sdk/react";
 import type { RunChangedFile } from "@modera/plugin-sdk";
@@ -531,7 +530,7 @@ function App() {
               aria-pressed={split}
               onClick={() => setMode(split ? "unified" : "split")}
             >
-              {split ? <Columns2 /> : <List />}
+              {split ? <Columns2 weight={split ? "fill" : "regular"} /> : <List />}
             </ReviewButton>
             {data?.overview && (
               <ReviewButton
@@ -559,7 +558,7 @@ function App() {
               aria-pressed={showTree}
               onClick={() => setTree(!showTree)}
             >
-              <FolderTree />
+              <FolderTree weight={showTree ? "fill" : "regular"} />
             </ReviewButton>
             {data?.mode === "workspace" && (
               <ReviewButton
