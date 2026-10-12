@@ -5,7 +5,7 @@
   "extensions": ["panel"],
   "id": "modera.git",
   "name": "Change Review",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Review workspace file changes and Git diffs.",
   "author": "Modera",
   "category": "development",
