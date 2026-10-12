@@ -7,8 +7,8 @@ import {
   realpath,
   rename,
   writeFile,
-} from "node:fs/promises";
-import { dirname, join } from "node:path";
+} from "@modera/plugin-sdk/workspace-fs";
+import { dirname, join } from "@modera/plugin-sdk/workspace-path";
 import { diffLines } from "diff";
 import type {
   RunChangedFile,

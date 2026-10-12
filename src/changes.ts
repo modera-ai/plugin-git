@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, readFile, readlink } from "node:fs/promises";
-import { join } from "node:path";
+import { lstat, readFile, readlink } from "@modera/plugin-sdk/workspace-fs";
+import { join } from "@modera/plugin-sdk/workspace-path";
 import type { ToolContext } from "@modera/plugin-sdk";
 import { change, git, repository, selectedPaths, type Input } from "./index";
 

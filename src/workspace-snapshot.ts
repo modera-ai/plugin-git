@@ -1,5 +1,5 @@
-import { opendir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { opendir, readFile } from "@modera/plugin-sdk/workspace-fs";
+import { join } from "@modera/plugin-sdk/workspace-path";
 import createIgnore from "ignore";
 
 const excluded = new Set([

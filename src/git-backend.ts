@@ -1,6 +1,6 @@
-import { execFile } from "node:child_process";
-import { isAbsolute, relative } from "node:path";
-import { realpath } from "node:fs/promises";
+import { execFile } from "@modera/plugin-sdk/workspace-process";
+import { isAbsolute, relative, resolve } from "@modera/plugin-sdk/workspace-path";
+import { realpath } from "@modera/plugin-sdk/workspace-fs";
 import type { ToolContext } from "@modera/plugin-sdk";
 
 export function git(
@@ -48,9 +48,9 @@ export async function repository(context: ToolContext): Promise<string> {
     throw new Error("A project workspace is required");
   const workspace = await realpath(context.workspacePath);
   const root = await realpath(
-    (
+    resolve(workspace, (
       await git(workspace, ["rev-parse", "--show-toplevel"], context.signal)
-    ).trim(),
+    ).trim()),
   );
   if (relative(workspace, root) !== "")
     throw new Error("Open the repository root as the project workspace");
