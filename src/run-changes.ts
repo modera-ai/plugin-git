@@ -8,7 +8,7 @@ import {
   rename,
   writeFile,
 } from "@modera/plugin-sdk/workspace-fs";
-import { dirname, join } from "@modera/plugin-sdk/workspace-path";
+import { dirname, join, isRemotePath } from "@modera/plugin-sdk/workspace-path";
 import { diffLines } from "diff";
 import type {
   RunChangedFile,
@@ -192,15 +192,19 @@ export class WorkspaceChangeReview {
       : await workspaceFiles(root, context.signal);
     const paths = discovered.paths;
     incomplete = discovered.incomplete;
-    for (const path of paths.slice(0, 2000)) {
+    const selected = paths.slice(0, 2000);
+    const concurrency = isRemotePath(root) ? 8 : 1;
+    capture: for (let offset = 0; offset < selected.length; offset += concurrency) {
       context.signal.throwIfAborted();
-      const file = await workingFile(root, path);
-      bytes += Buffer.byteLength(file?.text ?? "") + Buffer.byteLength(file?.image ?? "");
-      if (bytes > TOTAL_LIMIT) {
-        incomplete = true;
-        break;
+      const batch = selected.slice(offset, offset + concurrency);
+      const contents = await Promise.all(batch.map(path => workingFile(root, path)));
+      context.signal.throwIfAborted();
+      for (let index = 0; index < batch.length; index++) {
+        const file = contents[index]!;
+        bytes += Buffer.byteLength(file?.text ?? "") + Buffer.byteLength(file?.image ?? "");
+        if (bytes > TOTAL_LIMIT) { incomplete = true; break capture; }
+        baseline.set(batch[index]!, file);
       }
-      baseline.set(path, file);
     }
     if (baseline.size < paths.length) incomplete = true;
     return {
